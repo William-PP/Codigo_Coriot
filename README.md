@@ -25,6 +25,27 @@ noviembre de 2026). Debe:
 
 El reglamento completo y las medidas del robot están en `Contexto.txt`.
 
+### Arquitectura de cómputo (decisión)
+
+La **laptop** es el cerebro: recibe el video del robot por Wi-Fi privada y
+ejecuta toda la visión (color/YOLO), la asociación a cuadrantes y el envío IoT.
+El **microcontrolador** del robot solo controla motores, sensores y el
+mecanismo de derribo; **no procesa imágenes**.
+
+```
+[Robot: cámara + microcontrolador + motores + derribo]
+        │  video por Wi-Fi (MJPEG/RTSP)
+        ▼
+[Laptop: stream → detección → cuadrante → IoT]
+        │  JSON al broker de la competencia
+        │  comandos por Wi-Fi al robot (derribo)
+        ▼
+[Robot: actuador de derribo]
+```
+
+Esto es válido porque el reglamento permite cómputo **off-board** en una
+laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
+
 ---
 
 ## 2. Estado actual
@@ -70,7 +91,8 @@ Codigo_Coriot/
 │       ├── labels/train/
 │       └── labels/val/
 ├── stream/
-│   └── recibir.py            # (pendiente) captura de frames
+│   └── recibir.py            # (pendiente) recibe video del robot por Wi-Fi
+│                             # (webcam de la laptop solo para desarrollo)
 └── logica/
     ├── cuadrante.py          # (pendiente) detección → cuadrante
     └── iot.py                # (pendiente) JSON → broker
@@ -127,6 +149,12 @@ se copian aparte.
 
 ## 5. Decisiones y convenciones
 
+- **Laptop = cerebro**: toda la visión, los cuadrantes y el IoT corren en la
+  laptop.
+- **Microcontrolador = actuadores**: motores, sensores y mecanismo de derribo,
+  sin procesar imágenes.
+- **Video robot → laptop** por Wi-Fi privada (MJPEG/RTSP); los comandos
+  laptop → robot (derribo) viajan por la misma red.
 - **Python 3.12** para compatibilidad con PyTorch/ultralytics.
 - **YOLO11n** como modelo base (ligero, apto para Raspberry Pi/Jetson).
 - Clases en `rescate.yaml`: `0: H`, `1: S` (no cambiar el orden).
@@ -213,3 +241,5 @@ se copian aparte.
 - `modelo/rescate.yaml`: clases H/S, rutas relativas portables.
 - Dataset: carpetas creadas, sin imágenes aún.
 - Repositorio Git conectado a `github.com/William-PP/Codigo_Coriot`.
+- Se definió que la **laptop** procesa toda la visión e IoT; el
+  microcontrolador solo actúa sobre motores y derribo (cómputo off-board).

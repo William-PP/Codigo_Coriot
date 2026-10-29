@@ -19,7 +19,8 @@ CLASES = {0: "H", 1: "S"}
 CONF_MIN = 0.25   # confianza mínima para aceptar una detección
 IOU_MIN = 0.45    # solapamiento máximo entre cajas
 
-# Fuente de video: 0 = webcam; o una URL tipo "http://IP:8000/video"
+# Fuente de video: 0 = webcam de la laptop (desarrollo);
+# en competencia, URL del stream del robot, ej. "http://192.168.4.1:81/stream"
 FUENTE_VIDEO = 0
 
 # Comunicación IoT (el protocolo se define más adelante)
