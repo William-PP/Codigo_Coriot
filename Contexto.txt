@@ -1,0 +1,49 @@
+Para diseñar, construir y programar el robot para el reto Código Rescate (CORIOT GAMES 2026), recopilo y detallo todos los parámetros técnicos de creación, requisitos de IA, sistema físico y protocolo de pruebas establecidos en el reglamento oficial.
+1. Parámetros de Diseño y Creación del Robot (Hardware)
+ * Dimensiones Máximas Estrictas:
+   * Ancho: Máximo 13 cm
+   * Largo: Máximo 18 cm
+   * Alto: Menos de 20 cm (para no sobrepasar la altura de los obstáculos).
+   * Nota de diseño: Las medidas se verifican en la inspección técnica con partes desplegadas. La separación entre obstáculos ("edificios") en la pista es de aproximadamente 19 cm, por lo que un ancho de ≤13 cm garantiza margen de giro sin colisionar.
+ * Plataforma y Chasis:
+   * Móvil Terrestre: 1 solo robot alimentado por batería/fuente propia.
+   * Componentes Libres: Microcontrolador o computadora de a bordo (ESP32, Raspberry Pi, Jetson Nano, Arduino, etc.), motores, chasis impreso o comercial.
+ * Procesamiento Permitido:
+   * A bordo: Todo el cómputo en el robot.
+   * Off-board (Computador local): Procesamiento en una laptop/computadora en mesa, comunicada por red inalámbrica privada con el robot.
+   * Prohibición: Cámaras externas suspendidas sobre la pista, observación humana remota o control manual (es 100% autónomo).
+2. Requisitos de la Inteligencia Artificial (Visión Computacional)
+La misión exige uso verificable de IA para clasificar a las víctimas visualmente:
+ * Catálogo de Clases:
+   * Víctima Herida (Clase H): Figura física de color Naranja (requiere atención médica).
+   * Víctima con Suministros (Clase S): Figura física de color Morado (requiere agua/alimentos).
+ * Modelo de Visión: Debe implementar un modelo de clasificación/detección de objetos (ej. YOLO, MobileNet, CNNs o clasificadores basados en color/forma verificables).
+ * Asignación por Cuadrante: La IA debe asociar la víctima identificada al cuadrante específico donde se encuentra (evitando falsos positivos o doble conteo).Hay 12 posiciones de víctimas repartidas en la pista.
+3. Mecanismo Físico Requerido: "Derribo de Validación"
+No basta con detectar y enviar el dato por Wi-Fi; el robot necesita un sistema físico activo:
+ * Acción Obligatoria (Derribo): Tras clasificar y publicar por IoT la presencia de una víctima, el robot debe derribar físicamente la figura.
+ * Propósito: El derribo sirve como "confirmación física" ante los jueces de que la detección proviene de una lectura real en esa posición y no de un reporte falso enviado por código.
+ * Sin Manipulación: No se requiere sujetar, recoger ni transportar la figura, ni entregarle objetos.
+4. Navegación y Sensores del Entorno (La Pista)
+ * Diseño de Pista:
+   * 4 Cuadrantes: Cada zona mide 1 m × 1 m (Pista total 2 m × 2 m).
+   * Identificación del Cuadrante: Superficie pintada de colores distintos en cada cuadrante. El robot requiere un sensor de color hacia el suelo o una cámara de navegación para saber en qué cuadrante está posicionado.
+ * Obstáculos ("Edificios"): Bloques de 15 cm × 15 cm × 20 cm de alto.
+ * Navegación Línea-Free: No hay líneas negras, trayectorias dibujadas ni guías visuales en el piso. La exploración debe apoyarse en sensores de distancia (LIDAR, Ultrasonido, ToF), odometría o algoritmos de evitación de paredes/obstáculos.
+5. Sistema de Comunicación e IoT
+ * Servidor Broker/Receptor: Debe transmitir en tiempo real paquetes de datos (JSON) mediante Wi-Fi al servidor central de la competencia.
+ * Estructura de Datos: El mensaje IoT reporta el conteo acumulado o instantáneo de víctimas H y S por cada cuadrante identificado.
+ * Exploración Incompleta: Si el tiempo se agota, se evalúan únicamente los reportes recibidos y validados con derribo antes del cierre de tiempo.
+6. Protocolo de Pruebas e Inspección Técnica
+Durante la jornada del evento (12 de noviembre de 2026, Auditorio Pedro Nel Gómez, Campus Robledo):
+ * Inspección Técnica (Sección 8.1):
+   * Medición en caja/pie de rey (dimensiones \le 13 \times 18 \times 20\text{ cm}).
+   * Verificación del interruptor/mecanismo de apagado de seguridad.
+   * Prueba de transmisión IoT de prueba.
+ * Sesión de Pruebas en Pista (Sección 8.2):
+   * Turnos en pista real para calibrar algoritmos de visión bajo las condiciones de luz ambiental del auditorio.
+   * Ajuste de umbrales del sensor de color de piso y prueba de comunicación.
+ * Ejecución del Intento Oficial (Sección 9):
+   * Inicio: Se pulsa un único botón o comando de arranque sin tocar más el robot.
+   * Tiempo Límite: Recorrido autónomo de la pista.
+   * Penalizaciones: Mover u orillar obstáculos fuera de lugar, o realizar intervenciones humanas cancelan o reducen la puntuación del intento.

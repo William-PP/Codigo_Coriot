@@ -1,0 +1,37 @@
+# Entorno virtual (no se sube: cada PC crea el suyo)
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Pesos del modelo (se descargan solos; los entrenados se comparten aparte)
+modelo/pesos/*.pt
+
+# Salidas de entrenamiento/evaluación
+modelo/runs/
+runs/
+*.onnx
+*.engine
+*.tflite
+
+# Dataset: las imágenes y etiquetas NO se suben a Git (pueden ser grandes)
+modelo/dataset/images/train/*
+!modelo/dataset/images/train/.gitkeep
+modelo/dataset/images/val/*
+!modelo/dataset/images/val/.gitkeep
+modelo/dataset/labels/train/*
+!modelo/dataset/labels/train/.gitkeep
+modelo/dataset/labels/val/*
+!modelo/dataset/labels/val/.gitkeep
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporales
+bus.jpg

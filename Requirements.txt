@@ -1,0 +1,4 @@
+# Dependencias del proyecto Código Rescate (visión con YOLO11n)
+# Instalar con: .venv\Scripts\python -m pip install -r Requirements.txt
+ultralytics
+opencv-python
