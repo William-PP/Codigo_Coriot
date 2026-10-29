@@ -21,8 +21,16 @@ IOU_MIN = 0.45    # solapamiento máximo entre cajas
 
 # Fuente de video: 0 = webcam de la laptop (desarrollo);
 # en competencia, URL del stream del robot, ej. "http://192.168.4.1:81/stream"
-FUENTE_VIDEO = 0
+FUENTE_VIDEO = "http://192.168.80.145:8080/video"
 
 # Comunicación IoT (el protocolo se define más adelante)
 BROKER_HOST = "127.0.0.1"
 BROKER_PORT = 1883
+
+# Detección por color (HSV de OpenCV: H 0-179, S y V 0-255)
+RANGOS_HSV = {
+    "H": ((5, 120, 80), (22, 255, 255)),    # naranja
+    "S": ((125, 80, 60), (160, 255, 255)),  # morado
+}
+AREA_MIN = 300       # píxeles mínimos para considerar un blob
+MODO_DETECCION = "color"  # "color" o "yolo"

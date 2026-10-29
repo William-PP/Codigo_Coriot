@@ -60,6 +60,8 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | `rescate.yaml` | ✅ Listo y portable (sin ruta absoluta) |
 | Entrenamiento | ⬜ Pendiente (`modelo/entrenar.py`) |
 | Evaluación | ⬜ Pendiente (`modelo/evaluar.py`) |
+| Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
+| Calibración de color | ⬜ Script listo (`logica/calibrar_color.py`), falta ajustar con IP Webcam |
 | Stream de video | ⬜ Pendiente (`stream/recibir.py`) |
 | Cuadrante + IoT | ⬜ Pendiente (`logica/`) |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
@@ -94,6 +96,8 @@ Codigo_Coriot/
 │   └── recibir.py            # (pendiente) recibe video del robot por Wi-Fi
 │                             # (webcam de la laptop solo para desarrollo)
 └── logica/
+    ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
+    ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
     ├── cuadrante.py          # (pendiente) detección → cuadrante
     └── iot.py                # (pendiente) JSON → broker
 ```
@@ -142,12 +146,105 @@ Codigo_Coriot/
    python modelo/verificar_entorno.py
    ```
 
+### Activar el entorno virtual (cada sesión)
+
+El entorno **no queda activo solo**: hay que activarlo en cada terminal nueva.
+Si no ves `(.venv)` al inicio del prompt, `python` usará el Python del sistema
+(3.15) y fallará con `ModuleNotFoundError`.
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# Linux / macOS
+source .venv/bin/activate
+```
+
+Debe verse así:
+
+```
+(.venv) PS D:\Documents\Proyectos\Codigo_Coriot>
+```
+
+Si PowerShell bloquea la activación por política de ejecución:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+Alternativa sin activar (usa siempre el Python correcto):
+
+```powershell
+.\.venv\Scripts\python.exe -m logica.deteccion_color
+```
+
+Si usas VS Code, selecciona el intérprete `.venv\Scripts\python.exe`
+(`Ctrl+Shift+P` → *Python: Select Interpreter*) para que las terminales nuevas
+lo usen por defecto.
+
 El `.venv/`, los pesos `.pt` y el dataset **no están en Git**: se regeneran o
 se copian aparte.
 
 ---
 
-## 5. Decisiones y convenciones
+## 5. Calibración de color (IP Webcam)
+
+La detección por color necesita ajustar los rangos HSV a la luz y a las figuras
+reales. Para desarrollo se usa un celular con **IP Webcam** como cámara.
+
+### Preparar el celular
+
+1. Instalar **IP Webcam** y conectar celular y laptop a la misma red Wi-Fi.
+2. Pulsar “Start server” y copiar la URL (ej. `http://192.168.80.145:8080`).
+3. En los ajustes de la app, bajar la resolución a **640×480** para reducir
+   latencia.
+4. Poner la URL del video en `config.py`:
+
+   ```python
+   FUENTE_VIDEO = "http://192.168.80.145:8080/video"
+   ```
+
+### Calibrar
+
+Con el entorno activo y el objeto naranja o morado frente a la cámara:
+
+```powershell
+python -m logica.calibrar_color H   # naranja
+python -m logica.calibrar_color S   # morado
+```
+
+Se abren dos ventanas: el video con la caja detectada y la **máscara** (blanco =
+color detectado). Ajustar las barras hasta que en la máscara solo quede blanca
+la figura:
+
+| Barra | Controla | Ajuste |
+|---|---|---|
+| `H_min` / `H_max` | Tono (el color) | Estrechar alrededor del color. |
+| `S_min` / `S_max` | Saturación (pureza) | Subir `S_min` para quitar blancos/grises. |
+| `V_min` / `V_max` | Brillo | Subir `V_min` para quitar sombras. |
+
+Teclas:
+- **`p`** imprime la línea lista para pegar en `config.py`.
+- **`q`** cierra las ventanas.
+
+Pegar las dos líneas en `RANGOS_HSV` dentro de `config.py`:
+
+```python
+RANGOS_HSV = {
+    "H": ((...), (...)),   # naranja calibrado
+    "S": ((...), (...)),   # morado calibrado
+}
+```
+
+> Repetir la calibración el día del evento bajo la luz del auditorio: los
+> valores de casa no sirven en otra iluminación.
+
+---
+
+## 6. Decisiones y convenciones
 
 - **Laptop = cerebro**: toda la visión, los cuadrantes y el IoT corren en la
   laptop.
@@ -173,7 +270,7 @@ se copian aparte.
 
 ---
 
-## 6. Hoja de ruta (checklist)
+## 7. Hoja de ruta (checklist)
 
 - [x] Instalar Python 3.12 y crear `.venv`
 - [x] Instalar ultralytics + opencv
@@ -182,6 +279,8 @@ se copian aparte.
 - [x] `modelo/verificar_entorno.py` funcionando
 - [x] `modelo/rescate.yaml` portable
 - [x] Conectar repositorio Git
+- [x] `logica/deteccion_color.py` (HSV naranja/morado)
+- [ ] Calibrar rangos HSV con cámara real (IP Webcam)
 - [ ] Capturar fotos de las figuras H y S (desde la cámara del robot)
 - [ ] Etiquetar el dataset (Roboflow / CVAT / LabelImg)
 - [ ] `modelo/entrenar.py` (YOLO11n, hiperparámetros)
@@ -195,7 +294,7 @@ se copian aparte.
 
 ---
 
-## 7. Cómo continuar en otra sesión de OpenCode
+## 8. Cómo continuar en otra sesión de OpenCode
 
 1. Leer `README.md` y `Contexto.txt` completos.
 2. `git pull` para traer los últimos cambios.
@@ -208,9 +307,14 @@ se copian aparte.
 
 ---
 
-## 8. Problemas conocidos (gotchas)
+## 9. Problemas conocidos (gotchas)
 
 - **Python 3.15 no sirve** para PyTorch todavía. Usar 3.12.
+- **`ModuleNotFoundError: No module named 'cv2'`**: la terminal no tiene el
+  `.venv` activo. Activarlo con `.\.venv\Scripts\Activate.ps1` o ejecutar con
+  `.\.venv\Scripts\python.exe`.
+- **IP Webcam**: si el celular cambia de IP, actualizar `FUENTE_VIDEO` en
+  `config.py`.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -226,7 +330,7 @@ se copian aparte.
 
 ---
 
-## 9. Bitácora de sesiones
+## 10. Bitácora de sesiones
 
 ### 2026-10-29 — Configuración inicial
 - Se detectó que no había Python real (solo alias de Microsoft Store) y que
@@ -243,3 +347,13 @@ se copian aparte.
 - Repositorio Git conectado a `github.com/William-PP/Codigo_Coriot`.
 - Se definió que la **laptop** procesa toda la visión e IoT; el
   microcontrolador solo actúa sobre motores y derribo (cómputo off-board).
+
+### 2026-10-29 — Detección por color
+- Se creó `logica/deteccion_color.py` (HSV + morfología + filtro de área) y se
+  validó con una imagen sintética: confianza ≈ 0.99.
+- Se conectó **IP Webcam** (`http://192.168.80.145:8080/video`) y se verificó
+  con OpenCV: `isOpened=True`, frames de 1920×1080.
+- Se creó `logica/calibrar_color.py` para ajustar los rangos HSV en vivo
+  (teclas `p` = imprimir, `q` = salir).
+- Pendiente: calibrar H y S con objetos reales y guardar los valores en
+  `config.py`.
