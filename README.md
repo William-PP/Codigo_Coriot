@@ -63,7 +63,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
 | Calibración de color | ✅ Inicial con IP Webcam (recalibrar en el evento) |
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
-| Cuadrante por color de piso | 🔄 `logica/cuadrante.py` (probado sintético), falta calibrar con cartulinas |
+| Cuadrante por color de piso | 🔄 Código listo y probado solo sintético; **sin validar** hasta decidir sensor vs cámara |
 | IoT | ⬜ Pendiente (`logica/iot.py`) |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
 
@@ -300,6 +300,19 @@ Reglas prácticas:
 
 ## 7. Cuadrante por color de piso
 
+> **⚠️ Implementación provisional, sin pruebas por ahora.**
+> El reglamento permite **dos caminos** para saber el cuadrante:
+>
+> 1. **Sensor de color hacia el suelo** (ej. TCS34725, sensor de línea RGB).
+> 2. **Cámara de navegación** apuntando al piso (el código actual).
+>
+> Todavía **no está decidido** cuál se va a usar en el robot. Por eso este
+> módulo queda escrito y probado solo con imágenes sintéticas, pero **no se
+> validará en pista ni se integrará a `main.py` hasta definir el hardware**.
+> Si al final se usa un sensor de color, `logica/cuadrante.py` cambia de fuente
+> de datos (lee el sensor por serie/I2C en vez de la franja del frame), pero la
+> calibración y la lógica de "color → cuadrante" se reutilizan tal cual.
+
 El reglamento pide asociar cada víctima a **uno de los 4 cuadrantes** (1 m × 1 m
 cada uno, pista total 2 m × 2 m) y el piso de cada cuadrante está pintado de un
 color distinto. La cámara de víctimas no sabe en qué cuadrante está, así que se
@@ -314,7 +327,9 @@ franja inferior del frame  →  color HSV  →  cuadrante (1-4)  →  sumar H y 
 ### Calibrar el piso (en la pista, no en casa)
 
 Los colores del piso del auditorio no se conocen hasta el evento, así que
-`modelo/piso.json` se genera allí (y está ignorado en Git).
+`modelo/piso.json` se genera allí (y está ignorado en Git). Esto aplica solo si
+al final se usa la **cámara** para leer el piso; con un sensor de color, la
+calibración se hace sobre el sensor.
 
 ```powershell
 python -m logica.calibrar_piso
@@ -327,7 +342,7 @@ python -m logica.calibrar_piso
 
 Teclas: `1`–`4` guardan, `r` borra toda la calibración, `q` sale.
 
-### Probar
+### Probar (opcional, cuando se decida el hardware)
 
 ```powershell
 python -m logica.cuadrante
@@ -407,6 +422,8 @@ Detalles que importan:
 - [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
 - [x] `stream/capturar.py` (dataset con etiquetas automáticas)
 - [x] `logica/cuadrante.py` + `calibrar_piso.py` (color de piso → cuadrante)
+- [ ] **Decidir hardware del cuadrante: sensor de color al piso vs cámara**
+- [ ] Validar el cuadrante con el hardware elegido (bloqueado por la decisión)
 - [ ] Contador por cuadrante sin doble conteo (misma víctima en varios frames)
 - [ ] `logica/iot.py` (definir protocolo y JSON)
 - [ ] Integrar todo en `main.py`
@@ -540,3 +557,7 @@ Detalles que importan:
 - Se corrigió un fallo: un piso gris se clasificaba como rojo (el gris no tiene
   tono). Ahora se rechaza con `SAT_MIN = 50` y devuelve cuadrante `0`.
 - Pendiente: contador sin doble conteo y prueba con cartulinas reales.
+- **Decisión abierta**: el cuadrante puede resolverse con **sensor de color al
+  piso** o con **cámara de navegación**. Mientras no se elija el hardware, este
+  módulo queda sin validar en pista y sin integrar a `main.py`; los colores del
+  piso tampoco se pueden calibrar de verdad.
