@@ -29,7 +29,7 @@ BROKER_PORT = 1883
 
 # Detección por color (HSV de OpenCV: H 0-179, S y V 0-255)
 RANGOS_HSV = {
-    "H": ((5, 120, 80), (22, 255, 255)),    # naranja
+    "H": ((0, 111, 80), (70, 255, 255)),    # naranja
     "S": ((125, 80, 60), (160, 255, 255)),  # morado
 }
 AREA_MIN = 300       # píxeles mínimos para considerar un blob

@@ -61,8 +61,8 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Entrenamiento | ⬜ Pendiente (`modelo/entrenar.py`) |
 | Evaluación | ⬜ Pendiente (`modelo/evaluar.py`) |
 | Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
-| Calibración de color | ⬜ Script listo (`logica/calibrar_color.py`), falta ajustar con IP Webcam |
-| Stream de video | ⬜ Pendiente (`stream/recibir.py`) |
+| Calibración de color | 🔄 Valores iniciales en `config.py`, falta validar en vivo |
+| Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
 | Cuadrante + IoT | ⬜ Pendiente (`logica/`) |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
 
@@ -93,8 +93,8 @@ Codigo_Coriot/
 │       ├── labels/train/
 │       └── labels/val/
 ├── stream/
-│   └── recibir.py            # (pendiente) recibe video del robot por Wi-Fi
-│                             # (webcam de la laptop solo para desarrollo)
+│   └── recibir.py            # Cámara IP Webcam en hilo (último frame)
+│                             # En competencia, URL del stream del robot
 └── logica/
     ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
     ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
@@ -239,6 +239,19 @@ RANGOS_HSV = {
 }
 ```
 
+### Si el video va lento
+
+1. En IP Webcam: resolución **640×480**, calidad **50 %**, **15–20 FPS**.
+2. Usar `stream/recibir.py`, que lee en un hilo y descarta los frames viejos.
+3. Probar la fluidez sin calibrar:
+
+   ```powershell
+   python -m stream.recibir
+   ```
+
+4. Si sigue lento, probar `http://IP:8080/videofeed` o acercar el celular al
+   router (idealmente 5 GHz).
+
 > Repetir la calibración el día del evento bajo la luz del auditorio: los
 > valores de casa no sirven en otra iluminación.
 
@@ -285,7 +298,7 @@ RANGOS_HSV = {
 - [ ] Etiquetar el dataset (Roboflow / CVAT / LabelImg)
 - [ ] `modelo/entrenar.py` (YOLO11n, hiperparámetros)
 - [ ] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
-- [ ] `stream/recibir.py` (webcam o stream del robot)
+- [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
 - [ ] `logica/cuadrante.py` (color de piso u odometría)
 - [ ] `logica/iot.py` (definir protocolo y JSON)
 - [ ] Integrar todo en `main.py`
@@ -315,6 +328,8 @@ RANGOS_HSV = {
   `.\.venv\Scripts\python.exe`.
 - **IP Webcam**: si el celular cambia de IP, actualizar `FUENTE_VIDEO` en
   `config.py`.
+- **Video lento con IP Webcam**: bajar la resolución a 640×480 y usar
+  `stream/recibir.py` (hilo + descarte de frames viejos).
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -357,3 +372,11 @@ RANGOS_HSV = {
   (teclas `p` = imprimir, `q` = salir).
 - Pendiente: calibrar H y S con objetos reales y guardar los valores en
   `config.py`.
+
+### 2026-10-29 — Fluidez del stream
+- El video de IP Webcam iba lento por 1920×1080 y por frames viejos en el
+  buffer.
+- Se creó `stream/recibir.py`: hilo de lectura que conserva solo el último
+  frame y reduce el ancho a 640 px.
+- Se bajó IP Webcam a 640×480; la imagen quedó fluida.
+- Pendiente: validar que los rangos HSV actuales no detecten colores vecinos.
