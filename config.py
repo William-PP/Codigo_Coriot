@@ -56,3 +56,9 @@ CONFIRMA_FRAMES = 5
 
 # Identificador del robot que viaja en el JSON de IoT
 ROBOT_ID = "codigo-rescate"
+
+# Entrenamiento YOLO (valores pensados para un dataset pequeño y CPU)
+EPOCAS = 50
+LOTE = 8
+TAMANO_IMG = 640
+PACIENCIA = 15   # épocas sin mejora antes de detener el entrenamiento

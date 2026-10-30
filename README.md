@@ -58,8 +58,8 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Estructura de carpetas | ✅ `modelo/`, `stream/`, `logica/`, `config.py`, `main.py` |
 | Dataset | 🔄 23 train + 20 val (val ya tiene H y S; muchos negativos) |
 | `rescate.yaml` | ✅ Listo y portable (sin ruta absoluta) |
-| Entrenamiento | ⬜ Pendiente (`modelo/entrenar.py`) |
-| Evaluación | ⬜ Pendiente (`modelo/evaluar.py`) |
+| Entrenamiento | ✅ `modelo/entrenar.py` probado (1 época). Falta entrenar de verdad con el dataset real |
+| Evaluación | ✅ `modelo/evaluar.py` probado; imprime mAP y P/R por clase |
 | Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
 | Calibración de color | ✅ Inicial con IP Webcam (recalibrar en el evento) |
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
@@ -79,15 +79,15 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 ```
 Codigo_Coriot/
 ├── Contexto.txt              # Reglamento y requisitos del reto
-├── Requirements.txt          # Dependencias (ultralytics, opencv-python)
+├── Requirements.txt          # Dependencias (ultralytics, opencv-python, paho-mqtt)
 ├── README.md                 # Este documento (mantener actualizado)
 ├── config.py                 # Rutas, clases, umbrales, broker
 ├── main.py                   # Flujo: stream → detección → conteo → JSON
 ├── modelo/
 │   ├── verificar_entorno.py  # Diagnóstico: versiones + inferencia de prueba
 │   ├── rescate.yaml          # Dataset y clases para YOLO
-│   ├── entrenar.py           # (pendiente) YOLO11n + hiperparámetros
-│   ├── evaluar.py            # (pendiente) mAP50, mAP50-95, P/R por clase
+│   ├── entrenar.py           # Entrena YOLO11n → modelo/pesos/rescate.pt
+│   ├── evaluar.py            # mAP50, mAP50-95 y P/R por clase sobre val
 │   ├── pesos/                # yolo11n.pt y modelos entrenados (ignorado en Git)
 │   └── dataset/              # images/ y labels/ (ignorado en Git)
 │       ├── images/train/
@@ -265,7 +265,7 @@ RANGOS_HSV = {
 
 ---
 
-## 6. Captura del dataset (YOLO)
+## 6. Ruta YOLO: captura, entrenamiento y evaluación
 
 Herramienta de **preparación**, no del runtime de competencia: sirve para
 construir el dataset en casa y, sobre todo, en la sesión de práctica del evento.
@@ -299,6 +299,49 @@ Reglas prácticas:
 > Las fotos reales de las víctimas solo existen el día del evento. Hasta
 > entonces se trabaja con objetos naranjas/morados y el dataset queda como
 > prueba del flujo.
+
+### Entrenar (`modelo/entrenar.py`)
+
+```powershell
+python -m modelo.entrenar
+```
+
+Toma `modelo/pesos/yolo11n.pt` (entrenado con COCO, no conoce H ni S), lo
+ajusta con las imágenes de `dataset/images/train` y sus etiquetas, y guarda el
+resultado en **`modelo/pesos/rescate.pt`**.
+
+| Opción | Por defecto | Para qué |
+|---|---|---|
+| `--epocas` | `config.EPOCAS` (50) | Vueltas completas al dataset |
+| `--lote` | `config.LOTE` (8) | Imágenes por paso; bajar si falta memoria |
+| `--imgsz` | `config.TAMANO_IMG` (640) | Resolución de entrenamiento |
+| `--desde` | `yolo11n.pt` | Pesos iniciales (útil para seguir entrenando) |
+
+Se detiene solo si pasan `PACIENCIA` (15) épocas sin mejorar. Los resultados
+crudos quedan en `modelo/runs/entrenar/` (ignorado en Git).
+
+> En CPU y con 43 imágenes, entrenar de verdad tarda y da métricas malas: es
+> normal. El objetivo hoy es que el script funcione; el valor real aparece con
+> el dataset de las figuras reales.
+
+### Evaluar (`modelo/evaluar.py`)
+
+```powershell
+python -m modelo.evaluar
+```
+
+Pasa `rescate.pt` por las imágenes de `dataset/images/val` (que el modelo **no**
+vio al entrenar) e imprime:
+
+| Métrica | Qué significa |
+|---|---|
+| `mAP50` | Qué tan bien encuentra y clasifica; más alto, mejor |
+| `mAP50-95` | Igual, pero exigiendo cajas más precisas |
+| precisión | De lo que dijo “hay víctima”, cuánto era verdad |
+| recall | De las víctimas reales, cuántas encontró |
+
+Regla práctica: `mAP50 > 0.70` → vale la pena `MODO_DETECCION = "yolo"`;
+`< 0.40` → quedarse con el detector de color.
 
 ---
 
@@ -504,14 +547,14 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - [x] Calibrar rangos HSV iniciales con cámara real (recalibrar en evento)
 - [ ] Capturar fotos de las figuras H y S (desde la cámara del robot)
 - [ ] Etiquetar el dataset (Roboflow / CVAT / LabelImg)
-- [ ] `modelo/entrenar.py` (YOLO11n, hiperparámetros)
-- [ ] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
+- [x] `modelo/entrenar.py` (YOLO11n; probado con 1 época)
+- [x] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
 - [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
 - [x] `stream/capturar.py` (dataset con etiquetas automáticas)
 - [x] `logica/cuadrante.py` + `calibrar_piso.py` (color de piso → cuadrante)
 - [ ] **Decidir hardware del cuadrante: sensor de color al piso vs cámara**
 - [ ] Validar el cuadrante con el hardware elegido (bloqueado por la decisión)
-- [ ] Contador por cuadrante sin doble conteo (misma víctima en varios frames)
+- [x] Contador sin doble conteo (misma víctima en varios frames)
 - [x] `logica/iot.py` (envío MQTT con paho-mqtt, probado con broker local)
 - [ ] Confirmar con la organización `BROKER_HOST`, `BROKER_PORT` y `BROKER_TEMA`
 - [x] Flujo `stream → detección → conteo → JSON` en `main.py`
@@ -521,6 +564,33 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - [ ] Activar cuadrante en `main.py` (`USAR_CUADRANTE`) al decidir el hardware
 - [ ] Pruebas en pista real y calibración de umbrales
 - [ ] (Opcional) Docker para reproducibilidad
+
+### Día del evento (2026-11-12)
+
+**8.1 Inspección técnica**
+
+- [ ] Medidas ≤ 13 × 18 × 20 cm e interruptor de apagado accesible.
+- [ ] Prueba de transmisión IoT: confirmar **broker, puerto y tema** reales y
+      dejarlos en `config.py`.
+- [ ] Probar `python main.py` sin celular: el robot debe arrancar y mostrar el
+      video aunque el broker no responda.
+
+**8.2 Sesión de práctica en pista (lo más importante)**
+
+1. [ ] **Recalibrar HSV** con la luz del auditorio (los valores de casa no
+       sirven): `python -m logica.calibrar_color H` y `S`.
+2. [ ] Ajustar `ASPECTO_MIN` con la figura real: de pie se cuenta, acostada no.
+3. [ ] Cuadrante: decidir hardware, calibrar (`python -m logica.calibrar_piso`)
+       o dejarlo en pausa con `USAR_CUADRANTE = False`.
+4. [ ] Capturar dataset con las figuras reales: `python -m stream.capturar`.
+5. [ ] Revisar etiquetas y, si el tiempo alcanza, entrenar y evaluar:
+       `python -m modelo.entrenar` → `python -m modelo.evaluar`.
+6. [ ] Solo si `mAP50 > 0.70`: `MODO_DETECCION = "yolo"` y volver a probar.
+
+**Intento oficial**
+
+- [ ] Un solo comando (`python main.py`), sin tocar código ni ventanas extra.
+- [ ] Verificar que el JSON cambia cuando aparece cada víctima.
 
 ---
 
@@ -588,8 +658,16 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - **Docker/Linux**: `opencv-python` necesita `libgl1` y `libglib2.0-0`, o usar
   `opencv-python-headless`. Montar `modelo/pesos/` y `modelo/dataset/` como
   volúmenes.
-- Ultralytics escribe en `runs/` por defecto; en `entrenar.py` fijar
-  `project="modelo/runs"`.
+- Ultralytics escribe en `runs/` por defecto; `entrenar.py` y `evaluar.py` ya
+  fijan `project="modelo/runs"`.
+- **Entrenar en CPU es lento**: para comprobar que el script funciona usar
+  `python -m modelo.entrenar --epocas 1 --lote 4 --imgsz 320` (segundos). Un
+  entrenamiento real con 640 px puede tardar horas.
+- **Un modelo de 1 época “alucina”**: en un frame negro inventó 19 cajas H.
+  Nunca activar `MODO_DETECCION = "yolo"` con pesos de prueba; se borraron los
+  de la prueba de humo. Entrenar de verdad antes.
+- Ultralytics crea `*.cache` en `dataset/labels/`; se regeneran solos y están
+  ignorados en Git. No son un error.
 
 ---
 
@@ -716,3 +794,20 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   `RuntimeError` si el mensaje se había encolado antes de conectar.
 - Broker y tema son **provisionales** (`127.0.0.1`, `coriot/rescate`): hay que
   confirmarlos con la organización.
+
+### 2026-10-29 — Entrenamiento y evaluación de YOLO
+- Se agregó `modelo/entrenar.py`: parte de `modelo/pesos/yolo11n.pt`, entrena
+  con `rescate.yaml`, guarda en `modelo/runs/entrenar/` y copia el mejor modelo
+  a `modelo/pesos/rescate.pt`. Acepta `--epocas`, `--lote`, `--imgsz`, `--desde`.
+- Se agregó `modelo/evaluar.py`: mide `rescate.pt` sobre `dataset/images/val` e
+  imprime mAP50, mAP50-95, precisión y recall **por clase** (H y S).
+- Nuevo bloque en `config.py`: `EPOCAS=50`, `LOTE=8`, `TAMANO_IMG=640`,
+  `PACIENCIA=15`.
+- **Prueba de humo**: `python -m modelo.entrenar --epocas 1 --lote 4 --imgsz 320`
+  corrió completo (23 train / 20 val) y generó `rescate.pt`; `evaluar.py` lo
+  cargó e imprimió las métricas. Ambos scripts funcionan.
+- Las métricas salieron pésimas (mAP50 ≈ 0.001), como se esperaba con 1 época.
+  Ese modelo **alucinaba** cajas en un frame negro, así que se borró
+  `rescate.pt` y `modelo/runs/` para no activar YOLO por accidente.
+- Conclusión: el día del evento solo hay que capturar, entrenar y evaluar; si
+  `mAP50` no supera 0.70, se compite con el detector de color.

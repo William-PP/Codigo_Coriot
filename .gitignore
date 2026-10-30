@@ -27,6 +27,9 @@ modelo/dataset/labels/train/*
 modelo/dataset/labels/val/*
 !modelo/dataset/labels/val/.gitkeep
 
+# Cachés de etiquetas que genera ultralytics (se regeneran solos)
+modelo/dataset/labels/*.cache
+
 # Calibración de piso (depende de la luz de la pista)
 modelo/piso.json
 
