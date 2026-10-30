@@ -61,7 +61,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Entrenamiento | ⬜ Pendiente (`modelo/entrenar.py`) |
 | Evaluación | ⬜ Pendiente (`modelo/evaluar.py`) |
 | Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
-| Calibración de color | 🔄 Valores iniciales en `config.py`, falta validar en vivo |
+| Calibración de color | ✅ Inicial con IP Webcam (recalibrar en el evento) |
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
 | Cuadrante + IoT | ⬜ Pendiente (`logica/`) |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
@@ -98,6 +98,7 @@ Codigo_Coriot/
 └── logica/
     ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
     ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
+    ├── probar_en_vivo.py     # Prueba el detector con cajas y conteo
     ├── cuadrante.py          # (pendiente) detección → cuadrante
     └── iot.py                # (pendiente) JSON → broker
 ```
@@ -293,7 +294,7 @@ RANGOS_HSV = {
 - [x] `modelo/rescate.yaml` portable
 - [x] Conectar repositorio Git
 - [x] `logica/deteccion_color.py` (HSV naranja/morado)
-- [ ] Calibrar rangos HSV con cámara real (IP Webcam)
+- [x] Calibrar rangos HSV iniciales con cámara real (recalibrar en evento)
 - [ ] Capturar fotos de las figuras H y S (desde la cámara del robot)
 - [ ] Etiquetar el dataset (Roboflow / CVAT / LabelImg)
 - [ ] `modelo/entrenar.py` (YOLO11n, hiperparámetros)
@@ -330,6 +331,9 @@ RANGOS_HSV = {
   `config.py`.
 - **Video lento con IP Webcam**: bajar la resolución a 640×480 y usar
   `stream/recibir.py` (hilo + descarte de frames viejos).
+- **Rojo y naranja comparten tono**: con `H_min=0`, un objeto rojo también se
+  detecta como H. Si el piso o el entorno tienen rojo, subir `H_min` o
+  restringir la zona de detección.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -380,3 +384,10 @@ RANGOS_HSV = {
   frame y reduce el ancho a 640 px.
 - Se bajó IP Webcam a 640×480; la imagen quedó fluida.
 - Pendiente: validar que los rangos HSV actuales no detecten colores vecinos.
+
+### 2026-10-29 — Calibración validada
+- Rango naranja ajustado a **H 0–25** (antes 0–70 detectaba amarillo y verde).
+- Prueba sintética: amarillo y verde ya no se detectan; el morado sigue en S.
+- Se creó `logica/probar_en_vivo.py` para validar cajas y conteo en vivo.
+- Ojo: el rojo (H≈0) también entra como H; revisar el color del piso y de los
+  obstáculos.
