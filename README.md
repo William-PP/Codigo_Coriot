@@ -56,7 +56,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Librerías | ✅ ultralytics **8.4.192**, opencv **5.0.0**, torch **2.15.0+cpu** |
 | Verificación del entorno | ✅ `modelo/verificar_entorno.py` ejecuta una inferencia real |
 | Estructura de carpetas | ✅ `modelo/`, `stream/`, `logica/`, `config.py`, `main.py` |
-| Dataset | 🔄 21 train + 7 val capturados (val sin positivos: corregir) |
+| Dataset | 🔄 23 train + 20 val (val ya tiene H y S; muchos negativos) |
 | `rescate.yaml` | ✅ Listo y portable (sin ruta absoluta) |
 | Entrenamiento | ⬜ Pendiente (`modelo/entrenar.py`) |
 | Evaluación | ⬜ Pendiente (`modelo/evaluar.py`) |
@@ -445,3 +445,12 @@ Reglas prácticas:
   detección de H/S. Hay además capturas casi duplicadas en `train`.
 - Pendiente: borrar/rehacer `val` con mezcla de H, S, ambas y negativos, con
   ~80/20 train/val y moviendo la figura entre capturas.
+
+### 2026-10-29 — Val corregido
+- `val` pasó de 7 imágenes todas vacías a **20 imágenes**, de las cuales **8
+  tienen figuras** (5 cajas H y 5 cajas S) y 12 son negativas.
+- `train` quedó en **23 imágenes** (5 negativas).
+- Reparto actual: 53 % train / 47 % val; a futuro conviene acercarlo a 80/20
+  moviendo negativos de `val` a `train`.
+- Sigue apareciendo alguna caja muy pequeña (ej. 22×42 px) señal de detección
+  parcial: revisar antes de entrenar.
