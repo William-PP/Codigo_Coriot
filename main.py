@@ -6,6 +6,7 @@ import time
 import cv2
 
 import config
+from logica import iot
 from logica.contador import Contador
 from logica.filtros import solo_verticales
 from stream.recibir import Camara
@@ -51,11 +52,9 @@ def reporte_json(contador):
 
 
 def publicar(reporte):
-    """Envía el reporte al servidor. Por ahora solo lo imprime.
-
-    TODO: logica/iot.py (MQTT o HTTP) cuando se conozca el protocolo oficial.
-    """
+    """Imprime el reporte y lo envía al broker MQTT."""
     print(json.dumps(reporte, ensure_ascii=False))
+    iot.publicar(reporte)
 
 
 def dibujar(frame, detecciones, conteo, cuadrante_actual=None):
@@ -129,8 +128,10 @@ def main():
     finally:
         cam.cerrar()
         cv2.destroyAllWindows()
-        print("Reporte final:")
-        publicar(reporte_json(contador))
+        if contador.reporte() != ultimo:
+            print("Reporte final:")
+            publicar(reporte_json(contador))
+        iot.cerrar()
 
 
 if __name__ == "__main__":

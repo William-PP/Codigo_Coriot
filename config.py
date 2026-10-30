@@ -27,9 +27,13 @@ FUENTE_VIDEO = "http://192.168.80.145:8080/video"
 # Colores de piso por cuadrante: se calibran en la pista (no sirven los de casa)
 PISO_JSON = MODELO_DIR / "piso.json"
 
-# Comunicación IoT (el protocolo se define más adelante)
+# Comunicación IoT (MQTT). Confirmar host, puerto y tema con los organizadores.
 BROKER_HOST = "127.0.0.1"
 BROKER_PORT = 1883
+BROKER_USUARIO = ""          # dejar vacío si el broker no pide credenciales
+BROKER_PASSWORD = ""
+BROKER_TEMA = "coriot/rescate"   # TODO: tema oficial
+BROKER_CLIENTE = "codigo-rescate"  # debe ser único en el broker
 
 # Detección por color (HSV de OpenCV: H 0-179, S y V 0-255)
 RANGOS_HSV = {

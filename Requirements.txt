@@ -2,3 +2,4 @@
 # Instalar con: .venv\Scripts\python -m pip install -r Requirements.txt
 ultralytics
 opencv-python
+paho-mqtt>=2.0

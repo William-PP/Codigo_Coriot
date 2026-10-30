@@ -53,7 +53,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Área | Estado |
 |---|---|
 | Python / entorno virtual | ✅ Python **3.12.10** en `.venv/` |
-| Librerías | ✅ ultralytics **8.4.192**, opencv **5.0.0**, torch **2.15.0+cpu** |
+| Librerías | ✅ ultralytics **8.4.192**, opencv **5.0.0**, torch **2.15.0+cpu**, paho-mqtt **2.1.0** |
 | Verificación del entorno | ✅ `modelo/verificar_entorno.py` ejecuta una inferencia real |
 | Estructura de carpetas | ✅ `modelo/`, `stream/`, `logica/`, `config.py`, `main.py` |
 | Dataset | 🔄 23 train + 20 val (val ya tiene H y S; muchos negativos) |
@@ -65,7 +65,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
 | Cuadrante por color de piso | 🔄 Código listo y probado solo sintético; **sin validar** hasta decidir sensor vs cámara |
 | Flujo en `main.py` | ✅ stream → detección → conteo → reporte JSON (sin cuadrante aún) |
-| IoT | ⬜ Pendiente (`logica/iot.py`): falta el protocolo oficial |
+| IoT | 🔄 MQTT implementado (`logica/iot.py`); falta confirmar host, puerto y tema |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
 
 > Ojo: el modelo base `yolo11n.pt` está entrenado con COCO (80 clases:
@@ -107,7 +107,7 @@ Codigo_Coriot/
     ├── probar_en_vivo.py     # Prueba el detector con cajas y conteo
     ├── cuadrante.py          # Color del piso → cuadrante (1-4) + prueba en vivo
     ├── calibrar_piso.py      # Guarda el color de piso de cada cuadrante
-    └── iot.py                # (pendiente) JSON → broker
+    └── iot.py                # Envío del JSON al broker MQTT
 ```
 
 > La carpeta real es `Codigo_Coriot/` (el contexto habla de `codigo_rescate/`;
@@ -451,8 +451,43 @@ python main.py
 2. Detecta víctimas con el modo de `config.MODO_DETECCION`.
 3. Lee el cuadrante (si `USAR_CUADRANTE` y hay `modelo/piso.json`).
 4. `logica/contador.py` acumula H y S por cuadrante sin duplicar.
-5. Cuando el conteo cambia, imprime el JSON (luego será `logica/iot.py`).
+5. Cuando el conteo cambia, lo imprime y lo publica por MQTT.
 6. `q` cierra y muestra el reporte final.
+
+### Envío MQTT (`logica/iot.py`)
+
+El protocolo oficial es **MQTT**; se usa `paho-mqtt` (en `Requirements.txt`).
+
+Configuración en `config.py`:
+
+| Variable | Valor actual | Qué es |
+|---|---|---|
+| `BROKER_HOST` | `127.0.0.1` | IP del broker (**confirmar con los organizadores**) |
+| `BROKER_PORT` | `1883` | Puerto MQTT |
+| `BROKER_TEMA` | `coriot/rescate` | Tema donde se publica (**confirmar**) |
+| `BROKER_USUARIO` / `BROKER_PASSWORD` | vacío | Credenciales, si el broker las pide |
+| `BROKER_CLIENTE` | `codigo-rescate` | ID del cliente; **debe ser único** en el broker |
+
+Cómo publica:
+
+- `qos=1`, sin `retain`: el mensaje se confirma y no queda “pegado” en el tema.
+- `connect_async` + `loop_start`: la conexión corre en un hilo aparte y
+  **nunca bloquea** el bucle de visión.
+- Si el broker no está disponible, los mensajes quedan encolados y el robot
+  sigue funcionando; al cerrar se espera hasta 3 s a que salga el último.
+- Se publica **solo cuando cambia el conteo**, más un reporte final si cambió.
+  Así no se repite el mismo JSON en cada frame.
+
+> Los valores de `BROKER_HOST` y `BROKER_TEMA` son provisionales: hay que
+> confirmarlos con la organización antes del intento oficial.
+
+### Probar el envío MQTT en casa
+
+Sin broker, `main.py` funciona igual (solo imprime el JSON). Para probar de
+verdad hace falta un broker local; en Windows se puede usar
+[Mosquitto](https://mosquitto.org/download/) o cualquier broker MQTT en el
+celular/laptop. Luego, en `config.py`, apuntar `BROKER_HOST` a esa IP y
+suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 
 ---
 
@@ -477,7 +512,8 @@ python main.py
 - [ ] **Decidir hardware del cuadrante: sensor de color al piso vs cámara**
 - [ ] Validar el cuadrante con el hardware elegido (bloqueado por la decisión)
 - [ ] Contador por cuadrante sin doble conteo (misma víctima en varios frames)
-- [ ] `logica/iot.py` (definir protocolo y JSON)
+- [x] `logica/iot.py` (envío MQTT con paho-mqtt, probado con broker local)
+- [ ] Confirmar con la organización `BROKER_HOST`, `BROKER_PORT` y `BROKER_TEMA`
 - [x] Flujo `stream → detección → conteo → JSON` en `main.py`
 - [x] `logica/contador.py` (sin doble conteo por frames seguidos)
 - [x] `logica/filtros.py` (solo cajas verticales; derribadas se descartan)
@@ -535,6 +571,13 @@ python main.py
   Verificarlo con la figura real antes de competir.
 - `logica/probar_en_vivo.py` muestra las detecciones **sin** el filtro (sirve
   para depurar); `main.py` sí lo aplica.
+- **MQTT caído no detiene el robot**: si el broker no responde, `main.py` sigue
+  detectando y contando; los mensajes se encolan. Revisar la consola: muestra
+  `MQTT: conectado…` cuando logra enlazar.
+- **`BROKER_CLIENTE` debe ser único**: dos equipos con el mismo ID se expulsan
+  mutuamente del broker. Cambiarlo si hay varias laptops probando a la vez.
+- **Datos del broker provisionales**: `BROKER_HOST`/`BROKER_TEMA` deben
+  confirmarse con la organización; el valor actual es de prueba local.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -657,3 +700,19 @@ python main.py
   puede hacer que una figura de pie se vea casi cuadrada).
 - **Validado con cámara real (IP Webcam)**: al acostar la figura, deja de
   contar. Con `ASPECTO_MIN = 1.2` la figura de pie sí se cuenta.
+
+### 2026-10-29 — Envío MQTT
+- El protocolo oficial es **MQTT**. Se agregó `paho-mqtt>=2.0` a
+  `Requirements.txt` y se instaló `paho-mqtt 2.1.0`.
+- `logica/iot.py` publica el JSON con `qos=1`, sin `retain`, usando
+  `connect_async` + `loop_start` (hilo aparte, no bloquea la visión).
+- Se publica solo cuando cambia el conteo; el reporte final se manda únicamente
+  si cambió, para no duplicar el mismo JSON.
+- Pruebas con un broker local de prueba: 2 mensajes publicados y recibidos por
+  un suscriptor; con el flujo completo de `main.py` llegó **1** mensaje (sin
+  duplicados). Sin broker, `main.py` sigue funcionando y no se cae.
+- Se corrigieron dos fallos: el aviso imprimía “no se pudo conectar (Success)”
+  por comparar mal el `ReasonCode` de paho 2.x, y `cerrar()` lanzaba
+  `RuntimeError` si el mensaje se había encolado antes de conectar.
+- Broker y tema son **provisionales** (`127.0.0.1`, `coriot/rescate`): hay que
+  confirmarlos con la organización.
