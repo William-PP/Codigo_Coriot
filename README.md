@@ -481,7 +481,7 @@ python main.py
 - [x] Flujo `stream → detección → conteo → JSON` en `main.py`
 - [x] `logica/contador.py` (sin doble conteo por frames seguidos)
 - [x] `logica/filtros.py` (solo cajas verticales; derribadas se descartan)
-- [ ] Confirmar `ASPECTO_MIN` con la figura real y el ángulo de la cámara
+- [x] Confirmado con cámara real: la figura acostada no se cuenta
 - [ ] Activar cuadrante en `main.py` (`USAR_CUADRANTE`) al decidir el hardware
 - [ ] Pruebas en pista real y calibración de umbrales
 - [ ] (Opcional) Docker para reproducibilidad
@@ -655,3 +655,5 @@ python main.py
   cámara simulada: solo la vertical produjo `H=1`.
 - Pendiente: confirmar el umbral con la figura real (el ángulo de la cámara
   puede hacer que una figura de pie se vea casi cuadrada).
+- **Validado con cámara real (IP Webcam)**: al acostar la figura, deja de
+  contar. Con `ASPECTO_MIN = 1.2` la figura de pie sí se cuenta.
