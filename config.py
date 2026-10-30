@@ -10,6 +10,7 @@ PESOS_DIR = MODELO_DIR / "pesos"
 
 # Modelo y dataset
 MODELO_BASE = PESOS_DIR / "yolo11n.pt"
+PESOS_ENTRENADO = PESOS_DIR / "rescate.pt"   # sale de modelo/entrenar.py
 DATASET_YAML = MODELO_DIR / "rescate.yaml"
 
 # Clases del reglamento: H = herida (naranja), S = suministros (morado)
@@ -37,3 +38,13 @@ RANGOS_HSV = {
 }
 AREA_MIN = 300       # píxeles mínimos para considerar un blob
 MODO_DETECCION = "color"  # "color" o "yolo"
+
+# Cuadrante: bloqueado hasta decidir si se usa sensor de color o cámara
+USAR_CUADRANTE = False
+
+# Conteo de víctimas: frames seguidos que debe verse una figura para contarla
+# (evita que la misma víctima se cuente en cada frame)
+CONFIRMA_FRAMES = 5
+
+# Identificador del robot que viaja en el JSON de IoT
+ROBOT_ID = "codigo-rescate"

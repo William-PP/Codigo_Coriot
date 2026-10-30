@@ -64,7 +64,8 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Calibración de color | ✅ Inicial con IP Webcam (recalibrar en el evento) |
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
 | Cuadrante por color de piso | 🔄 Código listo y probado solo sintético; **sin validar** hasta decidir sensor vs cámara |
-| IoT | ⬜ Pendiente (`logica/iot.py`) |
+| Flujo en `main.py` | ✅ stream → detección → conteo → reporte JSON (sin cuadrante aún) |
+| IoT | ⬜ Pendiente (`logica/iot.py`): falta el protocolo oficial |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
 
 > Ojo: el modelo base `yolo11n.pt` está entrenado con COCO (80 clases:
@@ -81,7 +82,7 @@ Codigo_Coriot/
 ├── Requirements.txt          # Dependencias (ultralytics, opencv-python)
 ├── README.md                 # Este documento (mantener actualizado)
 ├── config.py                 # Rutas, clases, umbrales, broker
-├── main.py                   # Punto de entrada / orquestador (esqueleto)
+├── main.py                   # Flujo: stream → detección → conteo → JSON
 ├── modelo/
 │   ├── verificar_entorno.py  # Diagnóstico: versiones + inferencia de prueba
 │   ├── rescate.yaml          # Dataset y clases para YOLO
@@ -99,6 +100,8 @@ Codigo_Coriot/
 │   └── capturar.py           # Herramienta: guarda frames + etiquetas YOLO
 └── logica/
     ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
+    ├── deteccion_yolo.py     # Detector YOLO (misma interfaz que el de color)
+    ├── contador.py           # Conteo por cuadrante sin doble conteo
     ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
     ├── probar_en_vivo.py     # Prueba el detector con cajas y conteo
     ├── cuadrante.py          # Color del piso → cuadrante (1-4) + prueba en vivo
@@ -372,10 +375,11 @@ Detalles que importan:
 
 ### Pendiente
 
-- **Contador sin doble conteo**: la misma víctima se ve en muchos frames; debe
-  contarse una sola vez (por posición estable o al confirmar el derribo).
-- Integrar `deteccion_color` + `cuadrante` en `main.py` y publicar el JSON.
-
+- **Contador**: ya existe `logica/contador.py` (cuenta una figura cuando se ve
+  `CONFIRMA_FRAMES` frames seguidos), pero **está sin validar con el hardware
+  real**.
+- Integrar el cuadrante en `main.py`: se activa con `USAR_CUADRANTE = True`
+  cuando se decida el hardware.
 ---
 
 ## 8. Decisiones y convenciones
@@ -401,6 +405,49 @@ Detalles que importan:
 - Umbrales por defecto: confianza `0.25`, IoU `0.45`.
 - Dataset: ~80 % `train`, ~20 % `val`; incluir escenas sin víctimas (etiqueta
   vacía) para reducir falsos positivos.
+- **El JSON lo envía la laptop**, no el microcontrolador. El reglamento exige
+  que el sistema transmita JSON por Wi-Fi al servidor central y permite
+  cómputo off-board; no exige que salga del robot. Mandarlo desde la laptop
+  evita un salto extra (detección → micro → servidor) y no añade latencia.
+  Si algún día se requiere lo contrario, solo cambia `logica/iot.py`.
+- **Detector intercambiable**: `config.MODO_DETECCION` = `"color"` (rápido, sin
+  entrenar) o `"yolo"` (usa `modelo/pesos/rescate.pt` si existe). Ambos
+  devuelven el mismo formato, así que `main.py` no cambia.
+- **Conteo**: una figura se cuenta al verse `CONFIRMA_FRAMES` frames seguidos
+  (5 por defecto). El derribo físico es la confirmación definitiva.
+
+### Reporte JSON (propuesto)
+
+```json
+{
+  "robot": "codigo-rescate",
+  "tiempo": "2026-11-12T10:15:33",
+  "cuadrantes": {
+    "0": {"H": 1, "S": 0}
+  }
+}
+```
+
+- `robot`: identificador del equipo (`config.ROBOT_ID`).
+- `tiempo`: hora local del reporte (ISO 8601).
+- `cuadrantes`: conteo acumulado por cuadrante con claves `"1"`–`"4"`.
+  **`"0"` = sin cuadrante**, que es lo que se usa mientras el hardware del
+  cuadrante esté en pausa.
+- El formato definitivo depende del servidor de la competencia; ajustar
+  `reporte_json()` en `main.py` cuando se conozca.
+
+### Flujo de `main.py`
+
+```powershell
+python main.py
+```
+
+1. Abre el stream (`stream/recibir.py`).
+2. Detecta víctimas con el modo de `config.MODO_DETECCION`.
+3. Lee el cuadrante (si `USAR_CUADRANTE` y hay `modelo/piso.json`).
+4. `logica/contador.py` acumula H y S por cuadrante sin duplicar.
+5. Cuando el conteo cambia, imprime el JSON (luego será `logica/iot.py`).
+6. `q` cierra y muestra el reporte final.
 
 ---
 
@@ -426,7 +473,9 @@ Detalles que importan:
 - [ ] Validar el cuadrante con el hardware elegido (bloqueado por la decisión)
 - [ ] Contador por cuadrante sin doble conteo (misma víctima en varios frames)
 - [ ] `logica/iot.py` (definir protocolo y JSON)
-- [ ] Integrar todo en `main.py`
+- [x] Flujo `stream → detección → conteo → JSON` en `main.py`
+- [x] `logica/contador.py` (sin doble conteo por frames seguidos)
+- [ ] Activar cuadrante en `main.py` (`USAR_CUADRANTE`) al decidir el hardware
 - [ ] Pruebas en pista real y calibración de umbrales
 - [ ] (Opcional) Docker para reproducibilidad
 
@@ -468,6 +517,11 @@ Detalles que importan:
 - **Colores vecinos**: cyan se confunde con azul y un piso muy claro con blanco.
   Conviene que los 4 cuadrantes tengan tonos bien separados; si no, calibrar
   con buena luz y revisar las distancias que muestra `python -m logica.cuadrante`.
+- **Cuadrante `0` en el JSON**: mientras `USAR_CUADRANTE = False`, el reporte
+  acumula todo en `"0"`. No es un error; es el estado provisional.
+- **Doble conteo posible**: si una figura desaparece de la vista más de
+  `PERDIDA_MAX` (15 frames) y vuelve a aparecer, puede contarse de nuevo. La
+  solución real es confirmar con el derribo físico.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -561,3 +615,18 @@ Detalles que importan:
   piso** o con **cámara de navegación**. Mientras no se elija el hardware, este
   módulo queda sin validar en pista y sin integrar a `main.py`; los colores del
   piso tampoco se pueden calibrar de verdad.
+
+### 2026-10-29 — Flujo completo en main.py
+- Se confirmó en el reglamento que **el JSON no tiene que salir del
+  microcontrolador**: basta con que el sistema lo transmita y el cómputo
+  off-board está permitido. Se envía desde la laptop.
+- `main.py` quedó operativo: stream → detección → cuadrante (desactivado) →
+  conteo → JSON impreso. `config.MODO_DETECCION` elige `"color"` o `"yolo"`.
+- `logica/contador.py`: cuenta una víctima tras `CONFIRMA_FRAMES` frames
+  seguidos y la sigue por cercanía, para no sumarla en cada frame.
+- `logica/deteccion_yolo.py`: misma interfaz que el detector de color; usa
+  `modelo/pesos/rescate.pt` si existe o `yolo11n.pt` (COCO) si no.
+- Prueba con cámara simulada: una figura naranja durante 8 frames produjo
+  `{"0": {"H": 1, "S": 0}}`, es decir, contó una sola vez.
+- Pendiente: `logica/iot.py` (falta el protocolo oficial) y validar en cámara
+  real.
