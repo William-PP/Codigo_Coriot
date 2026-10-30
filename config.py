@@ -39,6 +39,10 @@ RANGOS_HSV = {
 AREA_MIN = 300       # píxeles mínimos para considerar un blob
 MODO_DETECCION = "color"  # "color" o "yolo"
 
+# Forma de la víctima: alto / ancho mínimo. Una figura derribada (horizontal)
+# queda por debajo y se descarta. 1.0 = cuadrada; subir para exigir más vertical.
+ASPECTO_MIN = 1.2
+
 # Cuadrante: bloqueado hasta decidir si se usa sensor de color o cámara
 USAR_CUADRANTE = False
 

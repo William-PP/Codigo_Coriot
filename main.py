@@ -7,6 +7,7 @@ import cv2
 
 import config
 from logica.contador import Contador
+from logica.filtros import solo_verticales
 from stream.recibir import Camara
 
 COLORES = {"H": (0, 165, 255), "S": (255, 0, 255)}
@@ -112,7 +113,7 @@ def main():
             if frame is None:
                 continue
 
-            detecciones = detector(frame)
+            detecciones = solo_verticales(detector(frame))
             cuadrante_actual = leer_cuadrante(frame) if leer_cuadrante else None
             contador.actualizar(detecciones, cuadrante_actual)
 

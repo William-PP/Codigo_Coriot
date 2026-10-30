@@ -6,6 +6,7 @@ import cv2
 
 import config
 from logica.deteccion_color import detectar
+from logica.filtros import solo_verticales
 from stream.recibir import Camara
 
 IDS = {nombre: numero for numero, nombre in config.CLASES.items()}
@@ -80,7 +81,7 @@ def main():
             if frame is None:
                 continue
 
-            detecciones = detectar(frame)
+            detecciones = solo_verticales(detectar(frame))
             vista = dibujar(frame, detecciones)
 
             cv2.putText(

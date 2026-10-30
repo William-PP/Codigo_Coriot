@@ -102,6 +102,7 @@ Codigo_Coriot/
     ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
     ├── deteccion_yolo.py     # Detector YOLO (misma interfaz que el de color)
     ├── contador.py           # Conteo por cuadrante sin doble conteo
+    ├── filtros.py            # Solo cajas verticales (figura de pie)
     ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
     ├── probar_en_vivo.py     # Prueba el detector con cajas y conteo
     ├── cuadrante.py          # Color del piso → cuadrante (1-4) + prueba en vivo
@@ -415,6 +416,10 @@ Detalles que importan:
   devuelven el mismo formato, así que `main.py` no cambia.
 - **Conteo**: una figura se cuenta al verse `CONFIRMA_FRAMES` frames seguidos
   (5 por defecto). El derribo físico es la confirmación definitiva.
+- **Solo cajas verticales**: `logica/filtros.py` descarta las detecciones donde
+  el alto no llega a `ASPECTO_MIN` (1.2) veces el ancho. Una figura derribada
+  queda horizontal y ya no se cuenta como víctima nueva. Se aplica en
+  `main.py` y en `stream/capturar.py` (para no etiquetar figuras caídas).
 
 ### Reporte JSON (propuesto)
 
@@ -475,6 +480,8 @@ python main.py
 - [ ] `logica/iot.py` (definir protocolo y JSON)
 - [x] Flujo `stream → detección → conteo → JSON` en `main.py`
 - [x] `logica/contador.py` (sin doble conteo por frames seguidos)
+- [x] `logica/filtros.py` (solo cajas verticales; derribadas se descartan)
+- [ ] Confirmar `ASPECTO_MIN` con la figura real y el ángulo de la cámara
 - [ ] Activar cuadrante en `main.py` (`USAR_CUADRANTE`) al decidir el hardware
 - [ ] Pruebas en pista real y calibración de umbrales
 - [ ] (Opcional) Docker para reproducibilidad
@@ -522,6 +529,12 @@ python main.py
 - **Doble conteo posible**: si una figura desaparece de la vista más de
   `PERDIDA_MAX` (15 frames) y vuelve a aparecer, puede contarse de nuevo. La
   solución real es confirmar con el derribo físico.
+- **Filtro de verticalidad**: con `ASPECTO_MIN = 1.2`, una figura de pie que se
+  vea casi cuadrada (por el ángulo de la cámara) quedaría **descartada**. Si las
+  figuras reales son anchas, bajar a 1.0–1.1; si se cuelan derribadas, subir.
+  Verificarlo con la figura real antes de competir.
+- `logica/probar_en_vivo.py` muestra las detecciones **sin** el filtro (sirve
+  para depurar); `main.py` sí lo aplica.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -630,3 +643,15 @@ python main.py
   `{"0": {"H": 1, "S": 0}}`, es decir, contó una sola vez.
 - Pendiente: `logica/iot.py` (falta el protocolo oficial) y validar en cámara
   real.
+
+### 2026-10-29 — Solo víctimas verticales
+- Se agregó `logica/filtros.py`: una detección solo cuenta si el alto es al
+  menos `ASPECTO_MIN` (1.2) veces el ancho, es decir, figura **de pie**.
+- Las figuras derribadas (horizontales) se descartan, evitando contarlas de
+  nuevo después del derribo.
+- Se aplica en `main.py` y en `stream/capturar.py`; `probar_en_vivo.py` queda
+  sin filtro para diagnóstico.
+- Prueba: caja 80×120 cuenta; 120×80, 100×100 y 140×122 no. Flujo completo con
+  cámara simulada: solo la vertical produjo `H=1`.
+- Pendiente: confirmar el umbral con la figura real (el ángulo de la cámara
+  puede hacer que una figura de pie se vea casi cuadrada).
