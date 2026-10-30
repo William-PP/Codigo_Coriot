@@ -56,7 +56,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Librerías | ✅ ultralytics **8.4.192**, opencv **5.0.0**, torch **2.15.0+cpu**, paho-mqtt **2.1.0** |
 | Verificación del entorno | ✅ `modelo/verificar_entorno.py` ejecuta una inferencia real |
 | Estructura de carpetas | ✅ `modelo/`, `stream/`, `logica/`, `config.py`, `main.py` |
-| Dataset | 🔄 23 train + 20 val (val ya tiene H y S; muchos negativos) |
+| Dataset | 🔄 18 train + 18 val, revisado (train H=4 S=7; val H=3 S=5; el resto negativas) |
 | `rescate.yaml` | ✅ Listo y portable (sin ruta absoluta) |
 | Entrenamiento | ✅ `modelo/entrenar.py` probado (1 época). Falta entrenar de verdad con el dataset real |
 | Evaluación | ✅ `modelo/evaluar.py` probado; imprime mAP y P/R por clase |
@@ -88,6 +88,7 @@ Codigo_Coriot/
 │   ├── rescate.yaml          # Dataset y clases para YOLO
 │   ├── entrenar.py           # Entrena YOLO11n → modelo/pesos/rescate.pt
 │   ├── evaluar.py            # mAP50, mAP50-95 y P/R por clase sobre val
+│   ├── revisar_dataset.py    # Detecta y quita etiquetas dudosas
 │   ├── pesos/                # yolo11n.pt y modelos entrenados (ignorado en Git)
 │   └── dataset/              # images/ y labels/ (ignorado en Git)
 │       ├── images/train/
@@ -300,6 +301,34 @@ Reglas prácticas:
 > entonces se trabaja con objetos naranjas/morados y el dataset queda como
 > prueba del flujo.
 
+### Limpiar las etiquetas (`modelo/revisar_dataset.py`)
+
+Las etiquetas de `stream/capturar.py` son automáticas: el detector de color a
+veces enmarca un borde, dos objetos o píxeles sueltos. Antes de entrenar
+conviene revisarlas:
+
+```powershell
+python -m modelo.revisar_dataset            # solo informa
+python -m modelo.revisar_dataset --borrar   # aplica los cambios
+```
+
+Una caja se descarta si cumple cualquiera de estas condiciones:
+
+| Problema | Regla | Por qué |
+|---|---|---|
+| `horizontal` | alto/ancho < 0.35 | Una figura de pie nunca es tan plana: es una cinta, un borde o la figura derribada |
+| `color disperso` | menos del 45 % de píxeles del color dentro de la caja | La caja envuelve píxeles sueltos, no un objeto |
+| `duplicada` | dos cajas de la misma clase se solapan más de 0.50 | La misma víctima anotada dos veces |
+| `clase o formato inválido` | clase fuera de `0`/`1` o línea rota | Ultralytics no lo puede leer |
+
+Si una imagen se queda **sin** cajas buenas se borra entera. Dejarla como
+negativa sería peor: enseñaría que ahí no hay víctima cuando sí la hay.
+
+> Ojo: que una caja tenga alto/ancho ~1 **no** la vuelve mala. El objeto de
+> prueba morado es casi cuadrado y sus etiquetas son correctas. `ASPECTO_MIN`
+> es un filtro del **runtime** para las figuras reales, no una regla de
+> etiquetado.
+
 ### Entrenar (`modelo/entrenar.py`)
 
 ```powershell
@@ -320,7 +349,7 @@ resultado en **`modelo/pesos/rescate.pt`**.
 Se detiene solo si pasan `PACIENCIA` (15) épocas sin mejorar. Los resultados
 crudos quedan en `modelo/runs/entrenar/` (ignorado en Git).
 
-> En CPU y con 43 imágenes, entrenar de verdad tarda y da métricas malas: es
+> En CPU y con 36 imágenes, entrenar de verdad tarda y da métricas malas: es
 > normal. El objetivo hoy es que el script funcione; el valor real aparece con
 > el dataset de las figuras reales.
 
@@ -547,6 +576,7 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - [x] Calibrar rangos HSV iniciales con cámara real (recalibrar en evento)
 - [ ] Capturar fotos de las figuras H y S (desde la cámara del robot)
 - [ ] Etiquetar el dataset (Roboflow / CVAT / LabelImg)
+- [x] `modelo/revisar_dataset.py` y limpieza del dataset de prueba (18 + 18)
 - [x] `modelo/entrenar.py` (YOLO11n; probado con 1 época)
 - [x] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
 - [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
@@ -668,6 +698,12 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   de la prueba de humo. Entrenar de verdad antes.
 - Ultralytics crea `*.cache` en `dataset/labels/`; se regeneran solos y están
   ignorados en Git. No son un error.
+- **Etiquetas automáticas**: el detector de color se equivoca. Antes de entrenar
+  pasar `python -m modelo.revisar_dataset`; si hay etiquetas dudosas, el modelo
+  aprende el error y las métricas no significan nada.
+- **Pocas negativas en `train` y muchas en `val`**: al 2026-10-29, `val` tiene
+  12 negativas de 18. Con tan pocos positivos las métricas saltan mucho;
+  conviene más variedad de figuras antes de creerles.
 
 ---
 
@@ -811,3 +847,25 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   `rescate.pt` y `modelo/runs/` para no activar YOLO por accidente.
 - Conclusión: el día del evento solo hay que capturar, entrenar y evaluar; si
   `mAP50` no supera 0.70, se compite con el detector de color.
+
+### 2026-10-29 — Limpieza del dataset
+- Se agregó `modelo/revisar_dataset.py`: mide cada caja contra el blob de color
+  y descarta las que no sirven (horizontal, color disperso, duplicada, clase o
+  formato inválido). Sin `--borrar` solo informa.
+- Se borraron 7 imágenes con 9 cajas malas (respaldo en
+  `%TEMP%\opencode\dataset_respaldo_20261029.zip`):
+  - `train`: `194020_459`, `194021_204` (dos franjas naranjas planas de 218×13
+    y 86×15 px), `194028_079` (caja 420×53 con 30 % de color y 20 fragmentos),
+    `194034_365`, `194034_867` (objeto naranja acostado, 159×45).
+  - `val`: `195204_462` (140×123) y `195211_128` (140×153), con solo 23–25 %
+    de color: la caja envolvía píxeles sueltos de un objeto pálido.
+- **No** se tocaron las cajas moradas casi cuadradas (22×28 px en train,
+  126×104 px en val): son etiquetas correctas de un objeto de prueba cuadrado.
+  `ASPECTO_MIN` es un filtro de runtime, no una regla de etiquetado.
+- Resultado: train 18 (H=4, S=7, 7 negativas), val 18 (H=3, S=5, 12 negativas).
+  `revisar_dataset.py` ya no reporta nada.
+- Quedan 2 pares de imágenes casi idénticas (`194004_854`/`194005_432` y
+  `194158_071`/`194158_090`): no son un error, solo redundancia; se conservan
+  porque el dataset es muy pequeño.
+- `val` quedó con 12 negativas de 18: hay que capturar más figuras reales antes
+  de darle valor a las métricas.
