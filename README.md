@@ -63,7 +63,8 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
 | Calibración de color | ✅ Inicial con IP Webcam (recalibrar en el evento) |
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
-| Cuadrante + IoT | ⬜ Pendiente (`logica/`) |
+| Cuadrante por color de piso | 🔄 `logica/cuadrante.py` (probado sintético), falta calibrar con cartulinas |
+| IoT | ⬜ Pendiente (`logica/iot.py`) |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
 
 > Ojo: el modelo base `yolo11n.pt` está entrenado con COCO (80 clases:
@@ -100,7 +101,8 @@ Codigo_Coriot/
     ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
     ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
     ├── probar_en_vivo.py     # Prueba el detector con cajas y conteo
-    ├── cuadrante.py          # (pendiente) detección → cuadrante
+    ├── cuadrante.py          # Color del piso → cuadrante (1-4) + prueba en vivo
+    ├── calibrar_piso.py      # Guarda el color de piso de cada cuadrante
     └── iot.py                # (pendiente) JSON → broker
 ```
 
@@ -296,7 +298,72 @@ Reglas prácticas:
 
 ---
 
-## 7. Decisiones y convenciones
+## 7. Cuadrante por color de piso
+
+El reglamento pide asociar cada víctima a **uno de los 4 cuadrantes** (1 m × 1 m
+cada uno, pista total 2 m × 2 m) y el piso de cada cuadrante está pintado de un
+color distinto. La cámara de víctimas no sabe en qué cuadrante está, así que se
+usa el **color del piso bajo el robot**.
+
+La idea:
+
+```
+franja inferior del frame  →  color HSV  →  cuadrante (1-4)  →  sumar H y S
+```
+
+### Calibrar el piso (en la pista, no en casa)
+
+Los colores del piso del auditorio no se conocen hasta el evento, así que
+`modelo/piso.json` se genera allí (y está ignorado en Git).
+
+```powershell
+python -m logica.calibrar_piso
+```
+
+1. Apunta la cámara al piso del cuadrante 1 (la franja verde inferior debe caer
+   sobre ese color).
+2. Pulsa `1`. Repite con los cuadrantes `2`, `3` y `4`.
+3. `q` para salir. Se guarda `modelo/piso.json` con el HSV de cada cuadrante.
+
+Teclas: `1`–`4` guardan, `r` borra toda la calibración, `q` sale.
+
+### Probar
+
+```powershell
+python -m logica.cuadrante
+```
+
+Muestra en pantalla `cuadrante: N` y la distancia al color calibrado. Mueve la
+cámara entre cartulinas de colores: debe cambiar de cuadrante.
+
+### Cómo funciona `logica/cuadrante.py`
+
+| Función | Qué hace |
+|---|---|
+| `leer_piso(frame)` | HSV promedio de la franja inferior (15 % del alto). |
+| `cargar()` / `guardar()` | Lee y escribe `modelo/piso.json`. |
+| `clasificar(hsv, colores)` | Devuelve `(cuadrante, distancia)`; `0` si no se parece a ninguno. |
+
+Detalles que importan:
+
+- El tono (H) es **circular**: 0 y 179 son el mismo rojo, así que se promedia
+  como vector con peso por saturación.
+- Un piso **gris/blanco/negro no tiene tono**: se rechaza con
+  `SAT_MIN = 50` y devuelve cuadrante `0`.
+- `DIST_MAX = 0.30`: si el color no se parece lo suficiente a ninguno
+  calibrado, no se inventa un cuadrante.
+- La lectura del piso se limita a la **franja inferior** para que las figuras
+  (y sobre todo una figura naranja) no contaminen el color del piso.
+
+### Pendiente
+
+- **Contador sin doble conteo**: la misma víctima se ve en muchos frames; debe
+  contarse una sola vez (por posición estable o al confirmar el derribo).
+- Integrar `deteccion_color` + `cuadrante` en `main.py` y publicar el JSON.
+
+---
+
+## 8. Decisiones y convenciones
 
 - **Laptop = cerebro**: toda la visión, los cuadrantes y el IoT corren en la
   laptop.
@@ -322,7 +389,7 @@ Reglas prácticas:
 
 ---
 
-## 8. Hoja de ruta (checklist)
+## 9. Hoja de ruta (checklist)
 
 - [x] Instalar Python 3.12 y crear `.venv`
 - [x] Instalar ultralytics + opencv
@@ -339,7 +406,8 @@ Reglas prácticas:
 - [ ] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
 - [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
 - [x] `stream/capturar.py` (dataset con etiquetas automáticas)
-- [ ] `logica/cuadrante.py` (color de piso u odometría)
+- [x] `logica/cuadrante.py` + `calibrar_piso.py` (color de piso → cuadrante)
+- [ ] Contador por cuadrante sin doble conteo (misma víctima en varios frames)
 - [ ] `logica/iot.py` (definir protocolo y JSON)
 - [ ] Integrar todo en `main.py`
 - [ ] Pruebas en pista real y calibración de umbrales
@@ -347,7 +415,7 @@ Reglas prácticas:
 
 ---
 
-## 9. Cómo continuar en otra sesión de OpenCode
+## 10. Cómo continuar en otra sesión de OpenCode
 
 1. Leer `README.md` y `Contexto.txt` completos.
 2. `git pull` para traer los últimos cambios.
@@ -360,7 +428,7 @@ Reglas prácticas:
 
 ---
 
-## 10. Problemas conocidos (gotchas)
+## 11. Problemas conocidos (gotchas)
 
 - **Python 3.15 no sirve** para PyTorch todavía. Usar 3.12.
 - **`ModuleNotFoundError: No module named 'cv2'`**: la terminal no tiene el
@@ -377,6 +445,12 @@ Reglas prácticas:
   incompletas o incluir falsos positivos. Revisarlas antes de entrenar.
 - **Validación (`val`)**: debe contener imágenes **con** víctimas y también
   negativos; si es solo de escenas vacías, las métricas no sirven.
+- **Piso sin color**: una superficie gris, blanca o negra no tiene tono, así que
+  se rechaza (cuadrante `0`) en vez de inventar uno. Si el piso real es poco
+  saturado, bajar `SAT_MIN` en `logica/cuadrante.py`.
+- **Colores vecinos**: cyan se confunde con azul y un piso muy claro con blanco.
+  Conviene que los 4 cuadrantes tengan tonos bien separados; si no, calibrar
+  con buena luz y revisar las distancias que muestra `python -m logica.cuadrante`.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -392,7 +466,7 @@ Reglas prácticas:
 
 ---
 
-## 11. Bitácora de sesiones
+## 12. Bitácora de sesiones
 
 ### 2026-10-29 — Configuración inicial
 - Se detectó que no había Python real (solo alias de Microsoft Store) y que
@@ -454,3 +528,15 @@ Reglas prácticas:
   moviendo negativos de `val` a `train`.
 - Sigue apareciendo alguna caja muy pequeña (ej. 22×42 px) señal de detección
   parcial: revisar antes de entrenar.
+
+### 2026-10-29 — Cuadrante por color de piso
+- Se creó `logica/cuadrante.py`: lee el color de la franja inferior del frame,
+  lo promedia en HSV (tono circular, ponderado por saturación) y lo compara con
+  los colores calibrados para devolver el número de cuadrante.
+- Se creó `logica/calibrar_piso.py`: teclas `1`–`4` guardan el color de cada
+  cuadrante en `modelo/piso.json` (ignorado en Git), `r` borra, `q` sale.
+- Prueba sintética con verde/azul/amarillo/rojo: acierta los 4 con distancia 0
+  y sigue acertando con la luz al 60 % (distancia < 0.05).
+- Se corrigió un fallo: un piso gris se clasificaba como rojo (el gris no tiene
+  tono). Ahora se rechaza con `SAT_MIN = 50` y devuelve cuadrante `0`.
+- Pendiente: contador sin doble conteo y prueba con cartulinas reales.

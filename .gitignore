@@ -27,6 +27,9 @@ modelo/dataset/labels/train/*
 modelo/dataset/labels/val/*
 !modelo/dataset/labels/val/.gitkeep
 
+# Calibración de piso (depende de la luz de la pista)
+modelo/piso.json
+
 # Sistema operativo y editores
 .DS_Store
 Thumbs.db

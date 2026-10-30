@@ -23,6 +23,9 @@ IOU_MIN = 0.45    # solapamiento máximo entre cajas
 # en competencia, URL del stream del robot, ej. "http://192.168.4.1:81/stream"
 FUENTE_VIDEO = "http://192.168.80.145:8080/video"
 
+# Colores de piso por cuadrante: se calibran en la pista (no sirven los de casa)
+PISO_JSON = MODELO_DIR / "piso.json"
+
 # Comunicación IoT (el protocolo se define más adelante)
 BROKER_HOST = "127.0.0.1"
 BROKER_PORT = 1883
