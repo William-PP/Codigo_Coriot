@@ -56,7 +56,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Librerías | ✅ ultralytics **8.4.192**, opencv **5.0.0**, torch **2.15.0+cpu** |
 | Verificación del entorno | ✅ `modelo/verificar_entorno.py` ejecuta una inferencia real |
 | Estructura de carpetas | ✅ `modelo/`, `stream/`, `logica/`, `config.py`, `main.py` |
-| Dataset | ⬜ Carpetas creadas (`modelo/dataset/`), **sin imágenes todavía** |
+| Dataset | 🔄 21 train + 7 val capturados (val sin positivos: corregir) |
 | `rescate.yaml` | ✅ Listo y portable (sin ruta absoluta) |
 | Entrenamiento | ⬜ Pendiente (`modelo/entrenar.py`) |
 | Evaluación | ⬜ Pendiente (`modelo/evaluar.py`) |
@@ -93,8 +93,9 @@ Codigo_Coriot/
 │       ├── labels/train/
 │       └── labels/val/
 ├── stream/
-│   └── recibir.py            # Cámara IP Webcam en hilo (último frame)
-│                             # En competencia, URL del stream del robot
+│   ├── recibir.py            # Cámara IP Webcam en hilo (último frame)
+│   │                         # En competencia, URL del stream del robot
+│   └── capturar.py           # Herramienta: guarda frames + etiquetas YOLO
 └── logica/
     ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
     ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
@@ -258,7 +259,44 @@ RANGOS_HSV = {
 
 ---
 
-## 6. Decisiones y convenciones
+## 6. Captura del dataset (YOLO)
+
+Herramienta de **preparación**, no del runtime de competencia: sirve para
+construir el dataset en casa y, sobre todo, en la sesión de práctica del evento.
+
+```powershell
+python -m stream.capturar
+```
+
+Muestra el video en vivo con las cajas del detector de color y guarda el frame
+**sin dibujos** junto con su etiqueta `.txt` en formato YOLO. Haz **clic en la
+ventana del video** antes de usar las teclas.
+
+| Tecla | Carpeta | Qué guarda |
+|---|---|---|
+| `s` | `dataset/images/train` + `labels/train` | Frame con etiqueta automática (entrenamiento). |
+| `v` | `dataset/images/val` + `labels/val` | Igual, pero para **validación**. |
+| `n` | `dataset/images/train` | Frame con etiqueta **vacía** (negativo forzado). |
+| `q` | — | Cierra. |
+
+Reglas prácticas:
+
+- **~80 % `train`, ~20 % `val`**. El conjunto `val` debe tener imágenes **con**
+  víctimas (H, S, ambas) y también negativos; si es solo de escenas vacías, las
+  métricas no sirven.
+- Mover la figura y cambiar ángulo, distancia, luz y posición entre capturas:
+  muchas fotos casi iguales aportan poco.
+- Usar `n` cuando el detector se equivoque (objeto naranja que no es víctima).
+- Revisar las etiquetas automáticas antes de entrenar (LabelImg, CVAT o
+  Roboflow): el detector de color solo acelera el trabajo.
+
+> Las fotos reales de las víctimas solo existen el día del evento. Hasta
+> entonces se trabaja con objetos naranjas/morados y el dataset queda como
+> prueba del flujo.
+
+---
+
+## 7. Decisiones y convenciones
 
 - **Laptop = cerebro**: toda la visión, los cuadrantes y el IoT corren en la
   laptop.
@@ -284,7 +322,7 @@ RANGOS_HSV = {
 
 ---
 
-## 7. Hoja de ruta (checklist)
+## 8. Hoja de ruta (checklist)
 
 - [x] Instalar Python 3.12 y crear `.venv`
 - [x] Instalar ultralytics + opencv
@@ -300,6 +338,7 @@ RANGOS_HSV = {
 - [ ] `modelo/entrenar.py` (YOLO11n, hiperparámetros)
 - [ ] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
 - [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
+- [x] `stream/capturar.py` (dataset con etiquetas automáticas)
 - [ ] `logica/cuadrante.py` (color de piso u odometría)
 - [ ] `logica/iot.py` (definir protocolo y JSON)
 - [ ] Integrar todo en `main.py`
@@ -308,7 +347,7 @@ RANGOS_HSV = {
 
 ---
 
-## 8. Cómo continuar en otra sesión de OpenCode
+## 9. Cómo continuar en otra sesión de OpenCode
 
 1. Leer `README.md` y `Contexto.txt` completos.
 2. `git pull` para traer los últimos cambios.
@@ -321,7 +360,7 @@ RANGOS_HSV = {
 
 ---
 
-## 9. Problemas conocidos (gotchas)
+## 10. Problemas conocidos (gotchas)
 
 - **Python 3.15 no sirve** para PyTorch todavía. Usar 3.12.
 - **`ModuleNotFoundError: No module named 'cv2'`**: la terminal no tiene el
@@ -334,6 +373,10 @@ RANGOS_HSV = {
 - **Rojo y naranja comparten tono**: con `H_min=0`, un objeto rojo también se
   detecta como H. Si el piso o el entorno tienen rojo, subir `H_min` o
   restringir la zona de detección.
+- **Etiquetas automáticas**: las genera el detector de color; pueden estar
+  incompletas o incluir falsos positivos. Revisarlas antes de entrenar.
+- **Validación (`val`)**: debe contener imágenes **con** víctimas y también
+  negativos; si es solo de escenas vacías, las métricas no sirven.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -349,7 +392,7 @@ RANGOS_HSV = {
 
 ---
 
-## 10. Bitácora de sesiones
+## 11. Bitácora de sesiones
 
 ### 2026-10-29 — Configuración inicial
 - Se detectó que no había Python real (solo alias de Microsoft Store) y que
@@ -391,3 +434,14 @@ RANGOS_HSV = {
 - Se creó `logica/probar_en_vivo.py` para validar cajas y conteo en vivo.
 - Ojo: el rojo (H≈0) también entra como H; revisar el color del piso y de los
   obstáculos.
+
+### 2026-10-29 — Captura del dataset
+- Se creó `stream/capturar.py`: guarda el frame limpio + etiqueta YOLO
+  automática con el detector de color (`s` = train, `v` = val, `n` = negativo
+  forzado, `q` = salir).
+- Dataset actual: **21 imágenes en `train`** (5 con etiqueta vacía) y
+  **7 en `val`, todas con etiqueta vacía**.
+- Problema detectado: `val` sin ningún positivo → no sirve para medir
+  detección de H/S. Hay además capturas casi duplicadas en `train`.
+- Pendiente: borrar/rehacer `val` con mezcla de H, S, ambas y negativos, con
+  ~80/20 train/val y moviendo la figura entre capturas.
