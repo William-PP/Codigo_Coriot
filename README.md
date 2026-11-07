@@ -56,7 +56,7 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Librerías | ✅ ultralytics **8.4.192**, opencv **5.0.0**, torch **2.15.0+cpu**, paho-mqtt **2.1.0** |
 | Verificación del entorno | ✅ `modelo/verificar_entorno.py` ejecuta una inferencia real |
 | Estructura de carpetas | ✅ `modelo/`, `stream/`, `logica/`, `config.py`, `main.py` |
-| Dataset | 🔄 18 train + 18 val, revisado (train H=4 S=7; val H=3 S=5; el resto negativas) |
+| Dataset | ⬜ **Vacío a propósito** (vaciado el 2026-11-07). Se captura en la sesión de práctica |
 | `rescate.yaml` | ✅ Listo y portable (sin ruta absoluta) |
 | Entrenamiento | ✅ `modelo/entrenar.py` probado (1 época). Falta entrenar de verdad con el dataset real |
 | Evaluación | ✅ `modelo/evaluar.py` probado; imprime mAP y P/R por clase |
@@ -270,6 +270,13 @@ RANGOS_HSV = {
 
 Herramienta de **preparación**, no del runtime de competencia: sirve para
 construir el dataset en casa y, sobre todo, en la sesión de práctica del evento.
+
+> **El dataset está vacío a propósito** desde el 2026-11-07. Las carpetas
+> existen y están listas; solo faltan las fotos. No hace falta crear nada:
+> `stream/capturar.py` las llena solo.
+>
+> Respaldo de las fotos de prueba (antes de vaciar):
+> `%TEMP%\opencode\dataset_respaldo_20261029.zip`. No forma parte del repo.
 
 ```powershell
 python -m stream.capturar
@@ -869,3 +876,12 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   porque el dataset es muy pequeño.
 - `val` quedó con 12 negativas de 18: hay que capturar más figuras reales antes
   de darle valor a las métricas.
+
+### 2026-11-07 — Dataset vaciado antes del evento
+- Se vació `modelo/dataset/` (imágenes y etiquetas) para llegar limpio a la
+  sesión de práctica. Solo quedan los `.gitkeep` y las cuatro carpetas.
+- No hay que recrear nada: `stream/capturar.py` crea los archivos que falten.
+- Con el dataset vacío, `python -m modelo.evaluar` avisa “no existe rescate.pt”
+  y `python -m modelo.entrenar` se detiene con “no hay imágenes en train”.
+  Es el comportamiento esperado, no un error.
+- Respaldo de las 43 fotos de prueba: `%TEMP%\opencode\dataset_respaldo_20261029.zip`.
