@@ -6,15 +6,18 @@ _modelo = None
 
 
 def _cargar():
-    """Carga los pesos entrenados si existen; si no, el modelo base COCO."""
+    """Carga los pesos entrenados. Falla si no existen (no usa COCO)."""
     global _modelo
     if _modelo is None:
         from ultralytics import YOLO
 
         ruta = config.PESOS_ENTRENADO
         if not ruta.exists():
-            ruta = config.MODELO_BASE
-            print(f"Aviso: no hay pesos entrenados, usando {ruta.name} (clases COCO)")
+            raise FileNotFoundError(
+                f"No se encontró el modelo entrenado: {ruta}. "
+                "Entrena con 'python -m modelo.entrenar' o usa '--modo color' "
+                "solo para pruebas."
+            )
         _modelo = YOLO(str(ruta))
     return _modelo
 

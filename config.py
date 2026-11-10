@@ -50,7 +50,16 @@ RANGOS_HSV = {
     "S": ((125, 80, 60), (160, 255, 255)),  # morado
 }
 AREA_MIN = 300       # píxeles mínimos para considerar un blob
-MODO_DETECCION = "color"  # "color" o "yolo"
+
+# Modo de detección. En competencia debe ser "yolo".
+# "color" queda solo para pruebas y exige activarlo explícitamente:
+#   $env:CORIOT_MODO_DETECCION = "color"    (o python main.py --modo color)
+_modo = os.environ.get("CORIOT_MODO_DETECCION", "").strip().lower()
+MODO_DETECCION = _modo or "yolo"
+if MODO_DETECCION not in ("yolo", "color"):
+    raise SystemExit(
+        f"CORIOT_MODO_DETECCION inválido: {MODO_DETECCION!r}; usa 'yolo' o 'color'."
+    )
 
 # Forma de la víctima: alto / ancho mínimo. Es un filtro de RUNTIME para
 # descartar figuras derribadas; no es una regla de etiquetado del dataset.
@@ -101,3 +110,7 @@ EPOCAS = 50
 LOTE = 8
 TAMANO_IMG = 640
 PACIENCIA = 15   # épocas sin mejora antes de detener el entrenamiento
+
+# Validación mínima para considerar confiable el mAP (modelo/entrenar.py).
+MIN_IMAGENES_VAL = 30
+MIN_INSTANCIAS_POR_CLASE = 10

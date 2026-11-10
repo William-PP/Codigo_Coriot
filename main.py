@@ -73,9 +73,36 @@ class EstadoPipeline:
             return list(self.avisos)
 
 
-def cargar_detector():
-    """Devuelve la función de detección. En competencia solo se usa YOLO."""
-    from logica.deteccion_yolo import detectar
+class ErrorDeModelo(RuntimeError):
+    """El modo de detección pedido no tiene el modelo necesario."""
+
+
+def _resolver_modo(modo=None):
+    """Normaliza el modo de detección; por defecto usa config.MODO_DETECCION."""
+    modo = (modo or config.MODO_DETECCION or "yolo").strip().lower()
+    if modo not in ("yolo", "color"):
+        raise ValueError(f"Modo de detección inválido: {modo!r}; usa 'yolo' o 'color'.")
+    return modo
+
+
+def validar_pesos_yolo():
+    """Falla con un mensaje claro si el modo yolo no tiene rescate.pt."""
+    if not config.PESOS_ENTRENADO.exists():
+        raise ErrorDeModelo(
+            "Modo 'yolo' activo pero falta el modelo entrenado: "
+            f"{config.PESOS_ENTRENADO}\n"
+            "Entrena primero con: python -m modelo.entrenar ...\n"
+            "El modo 'color' es solo para pruebas: python main.py --modo color"
+        )
+
+
+def cargar_detector(modo=None):
+    """Devuelve la función de detección según el modo (yolo por defecto)."""
+    modo = _resolver_modo(modo)
+    if modo == "yolo":
+        from logica.deteccion_yolo import detectar
+    else:
+        from logica.deteccion_color import detectar
     return detectar
 
 
@@ -197,10 +224,14 @@ def ejecutar(
     archivo_inferencias=None,
     registrar_inferencias=None,
     estado=None,
+    modo=None,
 ):
     """Bucle principal. Los parámetros extra permiten probarlo sin hardware."""
     if detector is None:
-        detector = cargar_detector()
+        modo = _resolver_modo(modo)
+        if modo == "yolo":
+            validar_pesos_yolo()
+        detector = cargar_detector(modo)
 
     if enlace is None:
         if equipo and intento:
@@ -398,8 +429,11 @@ def ejecutar(
             estado.running = False
 
 
-def iniciar_pipeline(equipo=None, intento=None, archivo_inferencias=None, mostrar=False, fuente_video=None):
+def iniciar_pipeline(equipo=None, intento=None, archivo_inferencias=None, mostrar=False, fuente_video=None, modo=None):
     """Inicia el pipeline en un hilo y devuelve el EstadoPipeline."""
+    modo = _resolver_modo(modo)
+    if modo == "yolo":
+        validar_pesos_yolo()
     estado = EstadoPipeline(equipo=equipo, intento=intento)
     if archivo_inferencias is None:
         archivo_inferencias = os.path.join(LOGS_DIR, "inferencias.jsonl")
@@ -424,6 +458,7 @@ def iniciar_pipeline(equipo=None, intento=None, archivo_inferencias=None, mostra
                 intento=intento,
                 archivo_inferencias=archivo_inferencias,
                 estado=estado,
+                modo=modo,
             )
         except Exception as error:
             estado.log(f"pipeline caído: {error}", "error")
@@ -454,6 +489,12 @@ def main():
     parser = argparse.ArgumentParser(description="Código Rescate - laptop")
     parser.add_argument("--equipo", default=None, help="Identificador del equipo registrado")
     parser.add_argument("--intento", default=None, help="Identificador de intento habilitado por el juez")
+    parser.add_argument(
+        "--modo",
+        choices=("yolo", "color"),
+        default=None,
+        help="Modo de detección; por defecto yolo. 'color' es solo para pruebas.",
+    )
     args = parser.parse_args()
 
     equipo = (args.equipo or "").strip() or None
@@ -476,7 +517,11 @@ def main():
             equipo=equipo,
             intento=intento,
             archivo_inferencias=archivo_inferencias,
+            modo=args.modo,
         )
+    except ErrorDeModelo as error:
+        print(f"ERROR: {error}")
+        raise SystemExit(1)
     except KeyboardInterrupt:
         print("\nT4: interrumpido por el usuario")
     finally:

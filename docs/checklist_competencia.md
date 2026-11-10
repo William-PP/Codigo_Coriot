@@ -34,6 +34,26 @@
 - Reiniciar conteos = apagar y encender (RAM se pierde, secuencia sigue en NVS).
 - La laptop solo detecta y reenvía; no cuenta ni calcula cuadrantes.
 
+## Entrenamiento: mínimo de datos y tiempo medido
+
+- **Validación mínima para confiar en el mAP:** 30 imágenes y al menos **10 instancias por clase** (H y S).
+  Con menos, `modelo/entrenar.py` reporta `mAP50: NO CONFIABLE` y no aplica el umbral 0.70.
+- **Medición local** (laptop de desarrollo, CPU Intel i5-12400F, sin GPU; 300 train + 60 val,
+  640 px, lote 8, 3 épocas):
+
+  | Época | Tiempo |
+  |---|---:|
+  | 1 | 72.8 s |
+  | 2 | 68.0 s |
+  | 3 | 64.3 s |
+  | **Total 3 épocas** | **215.5 s (3.59 min)** |
+  | **Proyección 30 épocas** | **2062.1 s (34.4 min)** |
+
+- **Recomendación para el día:** `--epocas 30 --tiempo 40 --dispositivo cpu`.
+  Son 40 min de tope, con ~5.6 min de margen sobre la proyección medida.
+  Si el dataset supera ~300 imágenes, el tiempo crece casi linealmente: recalcular o bajar `--imgsz`.
+  La proyección **no incluye** captura ni etiquetado.
+
 ## Cronograma oficial del día (reglamento §8)
 
 - **9:30–10:10 Inspección técnica**: demostrar el modelo (entradas, salidas, registro de inferencias en `logs/`).
@@ -46,5 +66,5 @@
 Comandos del día:
 - Captura: `$env:CORIOT_VIDEO = "http://IP:8080/video"; python -m stream.capturar`
   (o `python -m stream.capturar --fuente "http://IP:8080/video"`).
-- Entrenamiento: `python -m modelo.entrenar --epocas 30 --tiempo 20 --dispositivo cpu`
+- Entrenamiento: `python -m modelo.entrenar --epocas 30 --tiempo 40 --dispositivo cpu`
 - Verificación: `scripts\verificar_laptop.ps1`
