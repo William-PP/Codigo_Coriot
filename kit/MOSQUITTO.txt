@@ -1,0 +1,19 @@
+MOSQUITTO PARA WINDOWS (no incluido en el repo)
+==============================================
+
+Descarga (poner el instalador en este USB antes de ir al evento):
+  https://mosquitto.org/download/
+  Archivo típico: mosquitto-2.x.x-install-windows-x64.exe
+
+Instalación:
+  1. Ejecutar el instalador como administrador.
+  2. Aceptar el servicio de Windows (Mosquitto Service).
+  3. Verificar que escucha en 127.0.0.1:1883:
+       mosquitto_sub -h 127.0.0.1 -p 1883 -t '#' -v
+  4. Si el firewall pregunta, permitir en red privada.
+
+Comandos útiles:
+  mosquitto_sub -h 127.0.0.1 -p 1883 -t coriot/robot/E01/config -v
+  mosquitto_pub -h 127.0.0.1 -p 1883 -t coriot/robot/E01/config -r -q 1 -m '{"equipo":"E01","intento":"I1"}'
+
+No se descarga automáticamente: la máquina de competencia puede no tener internet.

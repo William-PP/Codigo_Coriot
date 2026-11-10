@@ -1,6 +1,5 @@
 """Verifica el entorno: versiones, carga del modelo e inferencia."""
 
-import urllib.request
 from pathlib import Path
 
 import cv2
@@ -8,24 +7,24 @@ import numpy as np
 import ultralytics
 from ultralytics import YOLO
 
+import config
+
 # 1. Versiones instaladas
 print(f"ultralytics: {ultralytics.__version__}")
 print(f"opencv:      {cv2.__version__}")
 
-# 2. Cargar YOLO11n (se descarga solo si no existe)
-pesos = Path(__file__).resolve().parent / "pesos" / "yolo11s.pt"
-pesos.parent.mkdir(parents=True, exist_ok=True)
+# 2. Pesos base obligatorios (no se descargan)
+pesos = config.PESOS_DIR / "yolo11n.pt"
+if not pesos.exists():
+    raise SystemExit(f"Falta el modelo base: {pesos}. Copialo desde el kit (kit/PESOS_MODELO.txt).")
+
+# 3. Cargar YOLO11n
 modelo = YOLO(str(pesos))
 
-# 3. Descargar la imagen en memoria (sin crear archivos fuera de modelo/)
-url = "https://ultralytics.com/images/bus.jpg"
-datos = urllib.request.urlopen(url).read()
-imagen = cv2.imdecode(np.frombuffer(datos, np.uint8), cv2.IMREAD_COLOR)
-
-# 4. Inferencia sobre la imagen
+# 4. Inferencia sobre una imagen sintética (sin red)
+imagen = (np.zeros((640, 640, 3), dtype=np.uint8) + 127).astype("uint8")
 resultado = modelo.predict(imagen, conf=0.25, verbose=False)[0]
 
-# 5. Mostrar clase y confianza de cada detección
-for caja in resultado.boxes:
-    clase = modelo.names[int(caja.cls)]
-    print(f"{clase}: {float(caja.conf):.2%}")
+# 5. Mostrar detecciones (puede ser 0 en una imagen gris; lo importante es que corra)
+print(f"detecciones en imagen sintética: {len(resultado.boxes)}")
+print("Entorno OK.")

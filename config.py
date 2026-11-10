@@ -1,9 +1,11 @@
-"""Configuración central del proyecto Código Rescate."""
+"""Configuración central del proyecto Código Rescate (v2)."""
 
+import os
 from pathlib import Path
 
-# Rutas base: se calculan desde la ubicación de este archivo,
-# así funcionan aunque ejecutes desde otra carpeta.
+# ---------------------------------------------------------------------------
+# Rutas base (se calculan desde este archivo, no desde el directorio actual)
+# ---------------------------------------------------------------------------
 RAIZ = Path(__file__).resolve().parent
 MODELO_DIR = RAIZ / "modelo"
 PESOS_DIR = MODELO_DIR / "pesos"
@@ -20,22 +22,29 @@ CLASES = {0: "H", 1: "S"}
 CONF_MIN = 0.25   # confianza mínima para aceptar una detección
 IOU_MIN = 0.45    # solapamiento máximo entre cajas
 
-# Fuente de video: 0 = webcam de la laptop (desarrollo);
-# en competencia, URL del stream del robot, ej. "http://192.168.4.1:81/stream"
-FUENTE_VIDEO = "http://192.168.80.145:8080/video"
+# ---------------------------------------------------------------------------
+# Fuente de video
+# ---------------------------------------------------------------------------
+# Se cambia sin tocar el código con la variable de entorno CORIOT_VIDEO:
+#   $env:CORIOT_VIDEO = "0"                      # webcam de la laptop
+#   $env:CORIOT_VIDEO = "http://IP:8080/video"   # celular con IP Webcam
+FUENTE_VIDEO_DEFECTO = "http://192.168.80.145:8080/video"
 
-# Colores de piso por cuadrante: se calibran en la pista (no sirven los de casa)
-PISO_JSON = MODELO_DIR / "piso.json"
 
-# Comunicación IoT (MQTT). Confirmar host, puerto y tema con los organizadores.
-BROKER_HOST = "127.0.0.1"
-BROKER_PORT = 1883
-BROKER_USUARIO = ""          # dejar vacío si el broker no pide credenciales
-BROKER_PASSWORD = ""
-BROKER_TEMA = "coriot/rescate"   # TODO: tema oficial
-BROKER_CLIENTE = "codigo-rescate"  # debe ser único en el broker
+def _fuente_video():
+    """Lee CORIOT_VIDEO; si es un número lo devuelve como índice de cámara."""
+    valor = os.environ.get("CORIOT_VIDEO", "").strip()
+    if not valor:
+        return FUENTE_VIDEO_DEFECTO
+    # cv2.VideoCapture("0") busca un archivo; con int(0) abre la webcam.
+    return int(valor) if valor.isdigit() else valor
 
+
+FUENTE_VIDEO = _fuente_video()
+
+# ---------------------------------------------------------------------------
 # Detección por color (HSV de OpenCV: H 0-179, S y V 0-255)
+# ---------------------------------------------------------------------------
 RANGOS_HSV = {
     "H": ((0, 111, 80), (25, 255, 255)),    # naranja
     "S": ((125, 80, 60), (160, 255, 255)),  # morado
@@ -43,21 +52,51 @@ RANGOS_HSV = {
 AREA_MIN = 300       # píxeles mínimos para considerar un blob
 MODO_DETECCION = "color"  # "color" o "yolo"
 
-# Forma de la víctima: alto / ancho mínimo. Una figura derribada (horizontal)
-# queda por debajo y se descarta. 1.0 = cuadrada; subir para exigir más vertical.
+# Forma de la víctima: alto / ancho mínimo. Es un filtro de RUNTIME para
+# descartar figuras derribadas; no es una regla de etiquetado del dataset.
 ASPECTO_MIN = 1.2
 
-# Cuadrante: bloqueado hasta decidir si se usa sensor de color o cámara
-USAR_CUADRANTE = False
+# ---------------------------------------------------------------------------
+# Pista (tabla oficial, v2 §2). Coordenadas en mm, origen en la esquina
+# inferior izquierda.
+# ---------------------------------------------------------------------------
+CUADRANTES = {
+    "rojo": (500, 1500),       # superior izquierda
+    "azul": (1500, 1500),      # superior derecha
+    "verde": (500, 500),       # inferior izquierda
+    "amarillo": (1500, 500),   # inferior derecha
+}
+START = (100, 100)             # esquina inferior izquierda del cuadrante verde
+PUNTOS_X_TOTAL = 24
+PUNTOS_POR_CUADRANTE = 6
+VICTIMAS_POR_PRUEBA = 12
+# TODO: coordenadas exactas de las 24 X. Se miden en la pista; no inventar.
+PUNTOS_X = None
 
-# Conteo de víctimas: frames seguidos que debe verse una figura para contarla
-# (evita que la misma víctima se cuente en cada frame)
-CONFIRMA_FRAMES = 5
+# ---------------------------------------------------------------------------
+# Broker MQTT
+# ---------------------------------------------------------------------------
+BROKER_HOST = "127.0.0.1"       # TODO: confirmar con la organización
+BROKER_PORT = 1883
+BROKER_USUARIO = ""             # dejar vacío si el broker no pide credenciales
+BROKER_PASSWORD = ""
 
-# Identificador del robot que viaja en el JSON de IoT
-ROBOT_ID = "codigo-rescate"
+# ---------------------------------------------------------------------------
+# Temas MQTT (v2 §6.1)
+# ---------------------------------------------------------------------------
+ROBOT_ID = "E01"
+TEMA_VISION = f"coriot/vision/{ROBOT_ID}"                 # laptop -> robot
+TEMA_REPORTE_ROBOT = f"coriot/robot/{ROBOT_ID}/reporte"   # robot -> laptop
+TEMA_ACK_ROBOT = f"coriot/robot/{ROBOT_ID}/ack"           # laptop -> robot
+SERVIDOR_TEMA = "coriot/reporte"                          # TODO: tema oficial
+BROKER_CLIENTE = f"laptop-{ROBOT_ID}"   # único en el broker, distinto del robot
 
+# Límite de envío al servidor (reglamento §10.2: máximo 1 mensaje por segundo).
+INTERVALO_SERVIDOR = 1.0
+
+# ---------------------------------------------------------------------------
 # Entrenamiento YOLO (valores pensados para un dataset pequeño y CPU)
+# ---------------------------------------------------------------------------
 EPOCAS = 50
 LOTE = 8
 TAMANO_IMG = 640

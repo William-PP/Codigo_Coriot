@@ -1,0 +1,14 @@
+PESOS DEL MODELO (copiar a modelo\pesos\ en la laptop de competencia)
+====================================================================
+
+Obligatorios:
+  - yolo11n.pt          (modelo base, ~5.6 MB)  -> modelo\pesos\yolo11n.pt
+  - rescate.pt          (modelo entrenado con las figuras reales) -> modelo\pesos\rescate.pt
+
+Opcionales (solo si se entrenó de verdad y mAP50 > 0.70):
+  - yolo11s.pt          (modelo base más grande)
+
+Notas:
+  - rescate.pt se genera con: python -m modelo.entrenar (requiere dataset capturado).
+  - Si no hay rescate.pt, MODO_DETECCION queda en "color" (detector HSV).
+  - Los pesos NO están en Git; copiarlos desde el USB.

@@ -5,7 +5,7 @@
 > (estado, decisiones, problemas y bitácora). Si otra sesión de OpenCode va a
 > continuar, debe leer primero este archivo y `Contexto.txt`.
 
-**Última actualización:** 2026-10-29
+**Última actualización:** 2026-11-09
 
 ---
 
@@ -14,12 +14,11 @@
 Robot autónomo para el reto **Código Rescate** (CORIOT GAMES 2026, 12 de
 noviembre de 2026). Debe:
 
-- Detectar visualmente **víctimas** con YOLO11n:
+- Detectar visualmente **víctimas** con YOLO11n o por color:
   - **H** = herida → figura **naranja**.
   - **S** = suministros → figura **morado**.
-- Asociar cada víctima al **cuadrante** correcto (pista de 2 m × 2 m, 4
-  cuadrantes de 1 m × 1 m, 12 víctimas, sin líneas guía en el piso).
-- Reportar por **Wi-Fi/IoT** un JSON con los conteos H y S por cuadrante.
+- **Reportar por Wi-Fi/IoT** el JSON que arma el robot, con los conteos H y S
+  por cuadrante.
 - **Derribar físicamente** cada figura como confirmación (no manipularla).
 - Todo el cómputo es autónomo (a bordo u off-board en red privada).
 
@@ -27,24 +26,39 @@ El reglamento completo y las medidas del robot están en `Contexto.txt`.
 
 ### Arquitectura de cómputo (decisión)
 
-La **laptop** es el cerebro: recibe el video del robot por Wi-Fi privada y
-ejecuta toda la visión (color/YOLO), la asociación a cuadrantes y el envío IoT.
-El **microcontrolador** del robot solo controla motores, sensores y el
-mecanismo de derribo; **no procesa imágenes**.
+La **laptop detecta y reenvía; no cuenta, no calcula cuadrantes y no arma el
+JSON**. El **robot** navega, escanea, lleva el conteo y decide el derribo.
 
 ```
-[Robot: cámara + microcontrolador + motores + derribo]
-        │  video por Wi-Fi (MJPEG/RTSP)
+[Cámara del celular (IP Webcam)]
+        │ video por Wi-Fi privada
         ▼
-[Laptop: stream → detección → cuadrante → IoT]
-        │  JSON al broker de la competencia
-        │  comandos por Wi-Fi al robot (derribo)
+[Laptop: detector → filtro vertical → línea de visión]
+        │  coriot/vision/E01  (qos 0)
         ▼
-[Robot: actuador de derribo]
+[Robot: navega, escanea, cuenta y decide el derribo]
+        │  coriot/robot/E01/reporte  (qos 1)
+        ▼
+[Laptop: reenvía al servidor y espera PUBACK]
+        │  coriot/reporte  (qos 1, tema TODO)
+        ▼
+[Servidor de la competencia]
+        │  PUBACK
+        ▼
+[Laptop: ACK al robot] ──▶ [Robot: derriba]
 ```
 
-Esto es válido porque el reglamento permite cómputo **off-board** en una
+La laptop hace solo cuatro cosas:
+
+1. Detecta H y S con la cámara del celular y envía la línea de visión al robot.
+2. Recibe el reporte del robot y lo reenvía tal cual al servidor.
+3. Responde el ACK al robot **solo después** del PUBACK del servidor.
+4. Muestra el video y el último reporte en pantalla.
+
+Esto es válido porque el reglamento permite **cómputo off-board** en una
 laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
+Las decisiones D1–D12 están en `CONTEXTO_OPENCODE_v2.md` §3 y en
+`decisiones_tecnicas.md`.
 
 ---
 
@@ -63,9 +77,11 @@ laptop conectada por red inalámbrica privada (ver `Contexto.txt`, sección 1).
 | Detección por color | ✅ `logica/deteccion_color.py` (prueba sintética OK) |
 | Calibración de color | ✅ Inicial con IP Webcam (recalibrar en el evento) |
 | Stream de video | ✅ `stream/recibir.py` (IP Webcam en hilo, frames recientes) |
-| Cuadrante por color de piso | 🔄 Código listo y probado solo sintético; **sin validar** hasta decidir sensor vs cámara |
-| Flujo en `main.py` | ✅ stream → detección → conteo → reporte JSON (sin cuadrante aún) |
-| IoT | 🔄 MQTT implementado (`logica/iot.py`); falta confirmar host, puerto y tema |
+| Cuadrante y conteo | ✅ En el robot (TCS34725 + firmware); la laptop no los calcula |
+| Flujo en `main.py` | ✅ cámara → detección → filtro → visión MQTT; reporte → servidor → PUBACK → ACK |
+| IoT | 🔄 MQTT implementado (`logica/iot.py`, `logica/robot_mqtt.py`); falta confirmar host, puerto y tema |
+| Tests | ✅ 47 pruebas `unittest` (sin red ni broker) |
+| Simulador | ✅ `tools/simular_robot.py` (sin hardware) |
 | Git | ✅ Conectado a `github.com/William-PP/Codigo_Coriot` |
 
 > Ojo: el modelo base `yolo11n.pt` está entrenado con COCO (80 clases:
@@ -81,8 +97,12 @@ Codigo_Coriot/
 ├── Contexto.txt              # Reglamento y requisitos del reto
 ├── Requirements.txt          # Dependencias (ultralytics, opencv-python, paho-mqtt)
 ├── README.md                 # Este documento (mantener actualizado)
-├── config.py                 # Rutas, clases, umbrales, broker
-├── main.py                   # Flujo: stream → detección → conteo → JSON
+├── config.py                 # Rutas, clases, umbrales, IDs y temas MQTT
+├── main.py                   # Orquesta: cámara → visión → robot; sin conteo local
+├── ACTUALIZACION_CONTEXTO_OPENCODE.md
+├── CONTEXTO_OPENCODE_v2.md
+├── decisiones_tecnicas.md    # Decisiones y contradicciones detectadas
+├── firmware/                 # Referencia del robot ESP32 (no se modifica)
 ├── modelo/
 │   ├── verificar_entorno.py  # Diagnóstico: versiones + inferencia de prueba
 │   ├── rescate.yaml          # Dataset y clases para YOLO
@@ -99,16 +119,22 @@ Codigo_Coriot/
 │   ├── recibir.py            # Cámara IP Webcam en hilo (último frame)
 │   │                         # En competencia, URL del stream del robot
 │   └── capturar.py           # Herramienta: guarda frames + etiquetas YOLO
-└── logica/
-    ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
-    ├── deteccion_yolo.py     # Detector YOLO (misma interfaz que el de color)
-    ├── contador.py           # Conteo por cuadrante sin doble conteo
-    ├── filtros.py            # Solo cajas verticales (figura de pie)
-    ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
-    ├── probar_en_vivo.py     # Prueba el detector con cajas y conteo
-    ├── cuadrante.py          # Color del piso → cuadrante (1-4) + prueba en vivo
-    ├── calibrar_piso.py      # Guarda el color de piso de cada cuadrante
-    └── iot.py                # Envío del JSON al broker MQTT
+├── logica/
+│   ├── deteccion_color.py    # Detector HSV (H naranja, S morado)
+│   ├── deteccion_yolo.py     # Detector YOLO (misma interfaz que el de color)
+│   ├── filtros.py            # Solo cajas verticales (figura de pie)
+│   ├── vision_robot.py       # Detecciones → línea D,v,c,x,w,h,conf
+│   ├── robot_mqtt.py         # Reporte → servidor → PUBACK → ACK
+│   ├── iot.py                # Cliente MQTT único de la laptop
+│   ├── calibrar_color.py     # Ajuste en vivo de los rangos HSV
+│   └── probar_en_vivo.py     # Prueba el detector con cajas
+├── tests/
+│   ├── test_vision_robot.py
+│   ├── test_filtros.py
+│   ├── test_enlace.py
+│   └── test_simulador.py
+└── tools/
+    └── simular_robot.py      # Simulador del robot para probar sin hardware
 ```
 
 > La carpeta real es `Codigo_Coriot/` (el contexto habla de `codigo_rescate/`;
@@ -194,8 +220,36 @@ Si usas VS Code, selecciona el intérprete `.venv\Scripts\python.exe`
 (`Ctrl+Shift+P` → *Python: Select Interpreter*) para que las terminales nuevas
 lo usen por defecto.
 
-El `.venv/`, los pesos `.pt` y el dataset **no están en Git**: se regeneran o
-se copian aparte.
+### Dependencias del firmware (ESP32)
+
+El firmware usa únicamente librerías del core ESP32 y una externa:
+
+- **Core ESP32** (`esp32:esp32`): `Wire`, `WiFi`, `Preferences`, `math.h`,
+  `esp_task_wdt.h`, `Arduino.h`.
+- **PubSubClient** (MQTT): `#include <PubSubClient.h>`.
+
+Compilación con Arduino CLI (la carpeta y el `.ino` deben tener el mismo nombre):
+
+```powershell
+arduino-cli compile --fqbn esp32:esp32:esp32 firmware\firmware_robot_v3_7_esp32
+```
+
+Estructura por sketch (Arduino CLI exige que el nombre de la carpeta coincida
+con el del archivo `.ino`):
+
+```
+firmware/
+└── firmware_robot_v3_7_esp32/
+    └── firmware_robot_v3_7_esp32.ino
+```
+
+Instalación del core y la librería (si faltan):
+
+```powershell
+arduino-cli core update-index
+arduino-cli core install esp32:esp32
+arduino-cli lib install PubSubClient
+```
 
 ---
 
@@ -210,11 +264,15 @@ reales. Para desarrollo se usa un celular con **IP Webcam** como cámara.
 2. Pulsar “Start server” y copiar la URL (ej. `http://192.168.80.145:8080`).
 3. En los ajustes de la app, bajar la resolución a **640×480** para reducir
    latencia.
-4. Poner la URL del video en `config.py`:
+4. Elegir la fuente de video sin editar código con la variable de entorno
+   `CORIOT_VIDEO` (o cambiar `FUENTE_VIDEO_DEFECTO` en `config.py`):
 
-   ```python
-   FUENTE_VIDEO = "http://192.168.80.145:8080/video"
+   ```powershell
+   $env:CORIOT_VIDEO = "http://192.168.80.145:8080/video"
    ```
+
+   Valor por defecto actual: `http://192.168.80.145:8080/video`.
+   Usa `"0"` para la webcam de la laptop.
 
 ### Calibrar
 
@@ -239,14 +297,16 @@ Teclas:
 - **`p`** imprime la línea lista para pegar en `config.py`.
 - **`q`** cierra las ventanas.
 
-Pegar las dos líneas en `RANGOS_HSV` dentro de `config.py`:
+Valores actuales en `config.py` (recalibrar con la luz del evento):
 
 ```python
 RANGOS_HSV = {
-    "H": ((...), (...)),   # naranja calibrado
-    "S": ((...), (...)),   # morado calibrado
+    "H": ((0, 111, 80), (25, 255, 255)),    # naranja
+    "S": ((125, 80, 60), (160, 255, 255)),  # morado
 }
 ```
+
+`AREA_MIN = 300` y `CONF_MIN = 0.25` completan el detector de color.
 
 ### Si el video va lento
 
@@ -263,6 +323,8 @@ RANGOS_HSV = {
 
 > Repetir la calibración el día del evento bajo la luz del auditorio: los
 > valores de casa no sirven en otra iluminación.
+
+> Los pasos para ejecutar el flujo completo y los temas MQTT están en §8.
 
 ---
 
@@ -379,97 +441,43 @@ vio al entrenar) e imprime:
 Regla práctica: `mAP50 > 0.70` → vale la pena `MODO_DETECCION = "yolo"`;
 `< 0.40` → quedarse con el detector de color.
 
+> Los pasos de ejecución y los topics MQTT están en §8. Para probar sin
+> hardware, usa el simulador de §9.
+
 ---
 
-## 7. Cuadrante por color de piso
+## 7. Cuadrante y conteo (en el robot)
 
-> **⚠️ Implementación provisional, sin pruebas por ahora.**
-> El reglamento permite **dos caminos** para saber el cuadrante:
->
-> 1. **Sensor de color hacia el suelo** (ej. TCS34725, sensor de línea RGB).
-> 2. **Cámara de navegación** apuntando al piso (el código actual).
->
-> Todavía **no está decidido** cuál se va a usar en el robot. Por eso este
-> módulo queda escrito y probado solo con imágenes sintéticas, pero **no se
-> validará en pista ni se integrará a `main.py` hasta definir el hardware**.
-> Si al final se usa un sensor de color, `logica/cuadrante.py` cambia de fuente
-> de datos (lee el sensor por serie/I2C en vez de la franja del frame), pero la
-> calibración y la lógica de "color → cuadrante" se reutilizan tal cual.
+La laptop **no** calcula el cuadrante ni cuenta víctimas. Esas funciones son del
+robot, según D5, D8, D9, D10, D11 y D12:
 
-El reglamento pide asociar cada víctima a **uno de los 4 cuadrantes** (1 m × 1 m
-cada uno, pista total 2 m × 2 m) y el piso de cada cuadrante está pintado de un
-color distinto. La cámara de víctimas no sabe en qué cuadrante está, así que se
-usa el **color del piso bajo el robot**.
+- **Cuadrante:** TCS34725 por I2C en el robot. Lee el color del piso y detecta
+  el borde negro (D10: borde **activo**; lo prohibido es la línea guía interior).
+- **Conteo:** el robot cuenta H y S por cuadrante y solo confirma un derribo
+  después del ACK de la laptop.
+- **Escaneo:** 24 X (6 por cuadrante), no 16.
+- **Navegación:** reactiva con 3 HC-SR04; sin mapa fijo de obstáculos.
 
-La idea:
+La calibración del TCS34725 se hace en el robot/firmware, **no con la cámara de
+la laptop**. Los colores del piso del auditorio se ajustan en la pista.
 
-```
-franja inferior del frame  →  color HSV  →  cuadrante (1-4)  →  sumar H y S
-```
+En T8 se retiraron los módulos de cámara que hacían este trabajo en la laptop:
+cuadrante por color de piso, calibración de piso y conteo por frames. Ya no
+forman parte del flujo ni se ejecutan con `python -m`.
 
-### Calibrar el piso (en la pista, no en casa)
+Pendiente (solo lo confirma la organización): coordenadas exactas de las 24 X y
+nombres de los cuadrantes en el servidor. No se inventan valores.
 
-Los colores del piso del auditorio no se conocen hasta el evento, así que
-`modelo/piso.json` se genera allí (y está ignorado en Git). Esto aplica solo si
-al final se usa la **cámara** para leer el piso; con un sensor de color, la
-calibración se hace sobre el sensor.
-
-```powershell
-python -m logica.calibrar_piso
-```
-
-1. Apunta la cámara al piso del cuadrante 1 (la franja verde inferior debe caer
-   sobre ese color).
-2. Pulsa `1`. Repite con los cuadrantes `2`, `3` y `4`.
-3. `q` para salir. Se guarda `modelo/piso.json` con el HSV de cada cuadrante.
-
-Teclas: `1`–`4` guardan, `r` borra toda la calibración, `q` sale.
-
-### Probar (opcional, cuando se decida el hardware)
-
-```powershell
-python -m logica.cuadrante
-```
-
-Muestra en pantalla `cuadrante: N` y la distancia al color calibrado. Mueve la
-cámara entre cartulinas de colores: debe cambiar de cuadrante.
-
-### Cómo funciona `logica/cuadrante.py`
-
-| Función | Qué hace |
-|---|---|
-| `leer_piso(frame)` | HSV promedio de la franja inferior (15 % del alto). |
-| `cargar()` / `guardar()` | Lee y escribe `modelo/piso.json`. |
-| `clasificar(hsv, colores)` | Devuelve `(cuadrante, distancia)`; `0` si no se parece a ninguno. |
-
-Detalles que importan:
-
-- El tono (H) es **circular**: 0 y 179 son el mismo rojo, así que se promedia
-  como vector con peso por saturación.
-- Un piso **gris/blanco/negro no tiene tono**: se rechaza con
-  `SAT_MIN = 50` y devuelve cuadrante `0`.
-- `DIST_MAX = 0.30`: si el color no se parece lo suficiente a ninguno
-  calibrado, no se inventa un cuadrante.
-- La lectura del piso se limita a la **franja inferior** para que las figuras
-  (y sobre todo una figura naranja) no contaminen el color del piso.
-
-### Pendiente
-
-- **Contador**: ya existe `logica/contador.py` (cuenta una figura cuando se ve
-  `CONFIRMA_FRAMES` frames seguidos), pero **está sin validar con el hardware
-  real**.
-- Integrar el cuadrante en `main.py`: se activa con `USAR_CUADRANTE = True`
-  cuando se decida el hardware.
 ---
 
-## 8. Decisiones y convenciones
+## 8. Decisiones, ejecución y MQTT
 
-- **Laptop = cerebro**: toda la visión, los cuadrantes y el IoT corren en la
-  laptop.
-- **Microcontrolador = actuadores**: motores, sensores y mecanismo de derribo,
-  sin procesar imágenes.
-- **Video robot → laptop** por Wi-Fi privada (MJPEG/RTSP); los comandos
-  laptop → robot (derribo) viajan por la misma red.
+- **Laptop = detección y reenvío**: toda la visión corre en la laptop; el robot
+  navega, escanea, cuenta y decide el derribo.
+- **Robot = navegación, conteo y derribo**: no procesa imágenes; arma el JSON y
+  lo publica en el tema privado del robot.
+- **Sin ACK no hay derribo**: la laptop solo confirma después del PUBACK del
+  servidor (qos 1).
 - **Python 3.12** para compatibilidad con PyTorch/ultralytics.
 - **YOLO11n** como modelo base (ligero, apto para Raspberry Pi/Jetson).
 - Clases en `rescate.yaml`: `0: H`, `1: S` (no cambiar el orden).
@@ -482,100 +490,115 @@ Detalles que importan:
 - Carpetas y módulos en minúsculas (Linux distingue mayúsculas).
 - Comentarios y documentación en **español**.
 - **No agregar dependencias** sin actualizar `Requirements.txt` y este README.
-- Umbrales por defecto: confianza `0.25`, IoU `0.45`.
+- Umbrales por defecto: confianza `0.25`, IoU `0.45`, `ASPECTO_MIN = 1.2`.
 - Dataset: ~80 % `train`, ~20 % `val`; incluir escenas sin víctimas (etiqueta
   vacía) para reducir falsos positivos.
-- **El JSON lo envía la laptop**, no el microcontrolador. El reglamento exige
-  que el sistema transmita JSON por Wi-Fi al servidor central y permite
-  cómputo off-board; no exige que salga del robot. Mandarlo desde la laptop
-  evita un salto extra (detección → micro → servidor) y no añade latencia.
-  Si algún día se requiere lo contrario, solo cambia `logica/iot.py`.
+- **El robot arma el JSON**; la laptop lo reenvía tal cual. El formato oficial
+  del servidor está pendiente (TODO); `formatear_para_servidor()` es el punto
+  de conversión.
 - **Detector intercambiable**: `config.MODO_DETECCION` = `"color"` (rápido, sin
   entrenar) o `"yolo"` (usa `modelo/pesos/rescate.pt` si existe). Ambos
   devuelven el mismo formato, así que `main.py` no cambia.
-- **Conteo**: una figura se cuenta al verse `CONFIRMA_FRAMES` frames seguidos
-  (5 por defecto). El derribo físico es la confirmación definitiva.
 - **Solo cajas verticales**: `logica/filtros.py` descarta las detecciones donde
   el alto no llega a `ASPECTO_MIN` (1.2) veces el ancho. Una figura derribada
   queda horizontal y ya no se cuenta como víctima nueva. Se aplica en
   `main.py` y en `stream/capturar.py` (para no etiquetar figuras caídas).
 
-### Reporte JSON (propuesto)
-
-```json
-{
-  "robot": "codigo-rescate",
-  "tiempo": "2026-11-12T10:15:33",
-  "cuadrantes": {
-    "0": {"H": 1, "S": 0}
-  }
-}
-```
-
-- `robot`: identificador del equipo (`config.ROBOT_ID`).
-- `tiempo`: hora local del reporte (ISO 8601).
-- `cuadrantes`: conteo acumulado por cuadrante con claves `"1"`–`"4"`.
-  **`"0"` = sin cuadrante**, que es lo que se usa mientras el hardware del
-  cuadrante esté en pausa.
-- El formato definitivo depende del servidor de la competencia; ajustar
-  `reporte_json()` en `main.py` cuando se conozca.
-
-### Flujo de `main.py`
+### Ejecución
 
 ```powershell
 python main.py
 ```
 
-1. Abre el stream (`stream/recibir.py`).
-2. Detecta víctimas con el modo de `config.MODO_DETECCION`.
-3. Lee el cuadrante (si `USAR_CUADRANTE` y hay `modelo/piso.json`).
-4. `logica/contador.py` acumula H y S por cuadrante sin duplicar.
-5. Cuando el conteo cambia, lo imprime y lo publica por MQTT.
-6. `q` cierra y muestra el reporte final.
+Flujo real de `main.py`:
 
-### Envío MQTT (`logica/iot.py`)
+1. Abre la cámara (`stream/recibir.py`) y reintenta si falla.
+2. Detecta H y S con `config.MODO_DETECCION`.
+3. Aplica `solo_verticales()` (figura de pie).
+4. Arma la línea de visión y la envía al robot por `coriot/vision/E01`
+   (qos 0, máximo 15 Hz).
+5. El robot publica su reporte en `coriot/robot/E01/reporte`.
+6. `EnlaceRobot` lo reenvía a `coriot/reporte` (qos 1) y espera PUBACK.
+7. Solo tras el PUBACK responde `coriot/robot/E01/ack` (qos 0).
+8. Muestra el video y el último reporte; `q` sale.
 
-El protocolo oficial es **MQTT**; se usa `paho-mqtt` (en `Requirements.txt`).
+> `main.py` no cuenta, no calcula cuadrantes y no decide derribos.
 
-Configuración en `config.py`:
+### Reporte JSON del robot (propuesto)
+
+```json
+{
+  "equipo": "E01",
+  "intento": "SIM",
+  "secuencia": 1,
+  "estado": "en_curso",
+  "cuadrantes": [
+    {
+      "color": "rojo",
+      "explorado": true,
+      "heridos": 0,
+      "necesitan_suministros": 0
+    }
+  ]
+}
+```
+
+- `equipo`: `config.ROBOT_ID`.
+- `secuencia`: sube con cada reporte nuevo; los reintentos repiten la misma.
+- `cuadrantes`: lista; cada cuadrante trae `color`, `explorado`, `heridos` y
+  `necesitan_suministros`.
+- El formato definitivo depende del servidor de la competencia: **TODO**.
+  `formatear_para_servidor()` en `logica/robot_mqtt.py` es donde se ajustará.
+
+### Topics MQTT (valores de `config.py`)
+
+| Variable | Valor actual | Dirección |
+|---|---|---|
+| `ROBOT_ID` | `E01` | Identificador del robot |
+| `TEMA_VISION` | `coriot/vision/E01` | laptop → robot (qos 0) |
+| `TEMA_REPORTE_ROBOT` | `coriot/robot/E01/reporte` | robot → laptop (qos 1) |
+| `TEMA_ACK_ROBOT` | `coriot/robot/E01/ack` | laptop → robot (qos 0) |
+| `SERVIDOR_TEMA` | `coriot/reporte` | laptop → servidor (**TODO**) |
+| `BROKER_CLIENTE` | `laptop-E01` | ID único del cliente |
+
+### Broker MQTT
 
 | Variable | Valor actual | Qué es |
 |---|---|---|
-| `BROKER_HOST` | `127.0.0.1` | IP del broker (**confirmar con los organizadores**) |
+| `BROKER_HOST` | `127.0.0.1` | IP del broker (**TODO: confirmar**) |
 | `BROKER_PORT` | `1883` | Puerto MQTT |
-| `BROKER_TEMA` | `coriot/rescate` | Tema donde se publica (**confirmar**) |
 | `BROKER_USUARIO` / `BROKER_PASSWORD` | vacío | Credenciales, si el broker las pide |
-| `BROKER_CLIENTE` | `codigo-rescate` | ID del cliente; **debe ser único** en el broker |
 
-Cómo publica:
+Comportamiento de `logica/iot.py`:
 
-- `qos=1`, sin `retain`: el mensaje se confirma y no queda “pegado” en el tema.
-- `connect_async` + `loop_start`: la conexión corre en un hilo aparte y
-  **nunca bloquea** el bucle de visión.
-- Si el broker no está disponible, los mensajes quedan encolados y el robot
-  sigue funcionando; al cerrar se espera hasta 3 s a que salga el último.
-- Se publica **solo cuando cambia el conteo**, más un reporte final si cambió.
-  Así no se repite el mismo JSON en cada frame.
+- Un solo cliente (`laptop-E01`) para visión, reportes, servidor y ACK.
+- Visión y ACK con `qos=0`: no esperan red ni bloquean la visión.
+- Reporte al servidor con `qos=1`: espera PUBACK hasta 5 s y solo devuelve
+  `True` si el broker confirmó.
+- Sin conexión no se encolan mensajes con qos > 0: un reporte viejo no debe
+  salir después de haber decidido no enviar ACK.
+- Reconexión automática; las suscripciones se renuevan al reconectar.
 
-> Los valores de `BROKER_HOST` y `BROKER_TEMA` son provisionales: hay que
-> confirmarlos con la organización antes del intento oficial.
+### Probar sin broker
 
-### Probar el envío MQTT en casa
+El simulador del robot y la suite de tests funcionan sin red:
 
-Sin broker, `main.py` funciona igual (solo imprime el JSON). Para probar de
-verdad hace falta un broker local; en Windows se puede usar
-[Mosquitto](https://mosquitto.org/download/) o cualquier broker MQTT en el
-celular/laptop. Luego, en `config.py`, apuntar `BROKER_HOST` a esa IP y
-suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
+```powershell
+python tools/simular_robot.py --duracion 30
+python -m unittest discover -s tests -v
+```
+
+Para una prueba real de MQTT hace falta un broker local (Mosquitto o similar):
+apunta `BROKER_HOST` a su IP y suscríbete a los temas con un visor MQTT.
 
 ---
 
 ## 9. Hoja de ruta (checklist)
 
 - [x] Instalar Python 3.12 y crear `.venv`
-- [x] Instalar ultralytics + opencv
+- [x] Instalar ultralytics + opencv + paho-mqtt
 - [x] Crear estructura de carpetas
-- [x] `config.py` y esqueleto de `main.py`
+- [x] `config.py` con IDs, temas y umbrales v2
 - [x] `modelo/verificar_entorno.py` funcionando
 - [x] `modelo/rescate.yaml` portable
 - [x] Conectar repositorio Git
@@ -583,42 +606,44 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - [x] Calibrar rangos HSV iniciales con cámara real (recalibrar en evento)
 - [ ] Capturar fotos de las figuras H y S (desde la cámara del robot)
 - [ ] Etiquetar el dataset (Roboflow / CVAT / LabelImg)
-- [x] `modelo/revisar_dataset.py` y limpieza del dataset de prueba (18 + 18)
+- [x] `modelo/revisar_dataset.py` y limpieza del dataset de prueba
 - [x] `modelo/entrenar.py` (YOLO11n; probado con 1 época)
 - [x] `modelo/evaluar.py` (mAP50, mAP50-95, precisión/recall por clase)
 - [x] `stream/recibir.py` (IP Webcam en hilo, frames recientes)
 - [x] `stream/capturar.py` (dataset con etiquetas automáticas)
-- [x] `logica/cuadrante.py` + `calibrar_piso.py` (color de piso → cuadrante)
-- [ ] **Decidir hardware del cuadrante: sensor de color al piso vs cámara**
-- [ ] Validar el cuadrante con el hardware elegido (bloqueado por la decisión)
-- [x] Contador sin doble conteo (misma víctima en varios frames)
-- [x] `logica/iot.py` (envío MQTT con paho-mqtt, probado con broker local)
-- [ ] Confirmar con la organización `BROKER_HOST`, `BROKER_PORT` y `BROKER_TEMA`
-- [x] Flujo `stream → detección → conteo → JSON` en `main.py`
-- [x] `logica/contador.py` (sin doble conteo por frames seguidos)
-- [x] `logica/filtros.py` (solo cajas verticales; derribadas se descartan)
-- [x] Confirmado con cámara real: la figura acostada no se cuenta
-- [ ] Activar cuadrante en `main.py` (`USAR_CUADRANTE`) al decidir el hardware
+- [x] `logica/filtros.py` (solo cajas verticales)
+- [x] `logica/vision_robot.py` (línea `D,v,c,x,w,h,conf`)
+- [x] `logica/iot.py` (cliente MQTT único; qos 1 con PUBACK)
+- [x] `logica/robot_mqtt.py` (reporte → servidor → PUBACK → ACK)
+- [x] `main.py` v2 (cámara → visión → robot; sin conteo local)
+- [x] `tools/simular_robot.py` (simulador sin hardware)
+- [x] `tests/` con `unittest` (47 tests, sin red)
+- [x] T8: retirar los módulos de cámara de cuadrante, calibración de piso y
+      conteo por frames (eliminados)
+- [ ] Confirmar con la organización `BROKER_HOST`, `BROKER_PORT`,
+      `SERVIDOR_TEMA` y el formato oficial del JSON
+- [ ] Cuadrante y conteo en el robot (TCS34725 + firmware)
+- [ ] Medir las coordenadas exactas de las 24 X en la pista
 - [ ] Pruebas en pista real y calibración de umbrales
 - [ ] (Opcional) Docker para reproducibilidad
 
 ### Día del evento (2026-11-12)
 
-**8.1 Inspección técnica**
+**9.1 Inspección técnica**
 
 - [ ] Medidas ≤ 13 × 18 × 20 cm e interruptor de apagado accesible.
-- [ ] Prueba de transmisión IoT: confirmar **broker, puerto y tema** reales y
+- [ ] Prueba de transmisión IoT: confirmar **broker, puerto y temas** reales y
       dejarlos en `config.py`.
 - [ ] Probar `python main.py` sin celular: el robot debe arrancar y mostrar el
       video aunque el broker no responda.
 
-**8.2 Sesión de práctica en pista (lo más importante)**
+**9.2 Sesión de práctica en pista (lo más importante)**
 
 1. [ ] **Recalibrar HSV** con la luz del auditorio (los valores de casa no
        sirven): `python -m logica.calibrar_color H` y `S`.
 2. [ ] Ajustar `ASPECTO_MIN` con la figura real: de pie se cuenta, acostada no.
-3. [ ] Cuadrante: decidir hardware, calibrar (`python -m logica.calibrar_piso`)
-       o dejarlo en pausa con `USAR_CUADRANTE = False`.
+3. [ ] Cuadrante en el robot: calibrar el TCS34725 en pista (no con la cámara
+       de la laptop) y confirmar el borde negro.
 4. [ ] Capturar dataset con las figuras reales: `python -m stream.capturar`.
 5. [ ] Revisar etiquetas y, si el tiempo alcanza, entrenar y evaluar:
        `python -m modelo.entrenar` → `python -m modelo.evaluar`.
@@ -627,20 +652,38 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 **Intento oficial**
 
 - [ ] Un solo comando (`python main.py`), sin tocar código ni ventanas extra.
-- [ ] Verificar que el JSON cambia cuando aparece cada víctima.
+- [ ] Verificar que el robot reporta y que el ACK llega solo tras el PUBACK.
 
 ---
 
 ## 10. Cómo continuar en otra sesión de OpenCode
 
-1. Leer `README.md` y `Contexto.txt` completos.
+1. Leer `README.md`, `Contexto.txt`, `ACTUALIZACION_CONTEXTO_OPENCODE.md` y
+   `CONTEXTO_OPENCODE_v2.md`.
 2. `git pull` para traer los últimos cambios.
 3. Activar `.venv` y confirmar versiones con `modelo/verificar_entorno.py`.
 4. Revisar la sección **Estado actual** y la **bitácora** antes de tocar código.
-5. Trabajar **un paso a la vez**, explicando los comandos (el usuario prefiere
+5. Comandos de verificación:
+
+   ```powershell
+   # Tests (sin red, 47 pruebas)
+   python -m unittest discover -s tests -v
+
+   # Simulador del robot (sin hardware)
+   python tools/simular_robot.py --duracion 30
+
+   # Comprobar que todo compila
+   python -m py_compile main.py config.py logica/*.py tools/simular_robot.py
+   ```
+
+   > En PowerShell, `logica/*.py` no se expande para comandos nativos. Usa
+   > `Get-ChildItem logica\*.py | ForEach-Object { $_.FullName }` o pasa los
+   > archivos uno por uno.
+
+6. Trabajar **un paso a la vez**, explicando los comandos (el usuario prefiere
    ejecutarlos él para aprender).
-6. Al terminar la sesión: actualizar **Estado actual**, **Hoja de ruta** y
-   **Bitácora** de este README, luego `git add / commit / push`.
+7. Al terminar la sesión: actualizar **Estado actual**, **Hoja de ruta** y
+   **Bitácora** de este README, y `decisiones_tecnicas.md`.
 
 ---
 
@@ -661,30 +704,31 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   incompletas o incluir falsos positivos. Revisarlas antes de entrenar.
 - **Validación (`val`)**: debe contener imágenes **con** víctimas y también
   negativos; si es solo de escenas vacías, las métricas no sirven.
-- **Piso sin color**: una superficie gris, blanca o negra no tiene tono, así que
-  se rechaza (cuadrante `0`) en vez de inventar uno. Si el piso real es poco
-  saturado, bajar `SAT_MIN` en `logica/cuadrante.py`.
+- **Piso sin color**: el TCS34725 del robot rechaza superficies grises, blancas
+  o negras sin tono; no se inventa un cuadrante. La calibración se hace en el
+  robot, no con la cámara de la laptop.
 - **Colores vecinos**: cyan se confunde con azul y un piso muy claro con blanco.
-  Conviene que los 4 cuadrantes tengan tonos bien separados; si no, calibrar
-  con buena luz y revisar las distancias que muestra `python -m logica.cuadrante`.
-- **Cuadrante `0` en el JSON**: mientras `USAR_CUADRANTE = False`, el reporte
-  acumula todo en `"0"`. No es un error; es el estado provisional.
-- **Doble conteo posible**: si una figura desaparece de la vista más de
-  `PERDIDA_MAX` (15 frames) y vuelve a aparecer, puede contarse de nuevo. La
-  solución real es confirmar con el derribo físico.
+  Conviene que los 4 cuadrantes tengan tonos bien separados; calibrar el sensor
+  con buena luz en la pista.
+- **Cuadrante y conteo son del robot**: la laptop no los calcula. Si el robot no
+  reporta un cuadrante explorado, el JSON lo muestra como sin explorar; no es
+  un error de la laptop.
+- **Doble conteo**: lo evita el robot confirmando el derribo físico; la laptop
+  no lleva cuentas.
 - **Filtro de verticalidad**: con `ASPECTO_MIN = 1.2`, una figura de pie que se
   vea casi cuadrada (por el ángulo de la cámara) quedaría **descartada**. Si las
   figuras reales son anchas, bajar a 1.0–1.1; si se cuelan derribadas, subir.
   Verificarlo con la figura real antes de competir.
 - `logica/probar_en_vivo.py` muestra las detecciones **sin** el filtro (sirve
   para depurar); `main.py` sí lo aplica.
-- **MQTT caído no detiene el robot**: si el broker no responde, `main.py` sigue
-  detectando y contando; los mensajes se encolan. Revisar la consola: muestra
-  `MQTT: conectado…` cuando logra enlazar.
+- **MQTT caído no detiene la visión**: si el broker no responde, `main.py` sigue
+  detectando y enviando líneas de visión. Los mensajes con qos > 0 no se
+  encolan y no sale ACK sin PUBACK; el robot no derriba. Revisar la consola:
+  muestra `MQTT: conectado…` cuando logra enlazar.
 - **`BROKER_CLIENTE` debe ser único**: dos equipos con el mismo ID se expulsan
   mutuamente del broker. Cambiarlo si hay varias laptops probando a la vez.
-- **Datos del broker provisionales**: `BROKER_HOST`/`BROKER_TEMA` deben
-  confirmarse con la organización; el valor actual es de prueba local.
+- **Datos del broker provisionales**: `BROKER_HOST` y `SERVIDOR_TEMA` deben
+  confirmarse con la organización; `coriot/reporte` es un TODO.
 - El `py` launcher no ve la instalación de Microsoft Store; instalar Python
   3.12 desde python.org/winget y usar `py -3.12`.
 - **`path` relativo en YAML**: ultralytics lo resuelve contra su carpeta global
@@ -729,8 +773,9 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - `modelo/rescate.yaml`: clases H/S, rutas relativas portables.
 - Dataset: carpetas creadas, sin imágenes aún.
 - Repositorio Git conectado a `github.com/William-PP/Codigo_Coriot`.
-- Se definió que la **laptop** procesa toda la visión e IoT; el
-  microcontrolador solo actúa sobre motores y derribo (cómputo off-board).
+- Se definió que la **laptop** procesa la visión; el microcontrolador solo
+  actuaba sobre motores y derribo (cómputo off-board). Desde T1–T9 el robot
+  también navega, cuenta y decide el derribo.
 
 ### 2026-10-29 — Detección por color
 - Se creó `logica/deteccion_color.py` (HSV + morfología + filtro de área) y se
@@ -777,21 +822,19 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - Sigue apareciendo alguna caja muy pequeña (ej. 22×42 px) señal de detección
   parcial: revisar antes de entrenar.
 
-### 2026-10-29 — Cuadrante por color de piso
-- Se creó `logica/cuadrante.py`: lee el color de la franja inferior del frame,
-  lo promedia en HSV (tono circular, ponderado por saturación) y lo compara con
-  los colores calibrados para devolver el número de cuadrante.
-- Se creó `logica/calibrar_piso.py`: teclas `1`–`4` guardan el color de cada
-  cuadrante en `modelo/piso.json` (ignorado en Git), `r` borra, `q` sale.
-- Prueba sintética con verde/azul/amarillo/rojo: acierta los 4 con distancia 0
-  y sigue acertando con la luz al 60 % (distancia < 0.05).
+### 2026-10-29 — Cuadrante por color de piso (prototipo retirado)
+
+- Se creó un prototipo que leía el color de la franja inferior del frame, lo
+  promediaba en HSV (tono circular, ponderado por saturación) y lo comparaba
+  con colores calibrados para devolver el número de cuadrante.
+- Se creó un calibrador de piso por cámara: teclas `1`–`4` guardaban el color
+  de cada cuadrante, `r` borraba, `q` salía.
+- Prueba sintética con verde/azul/amarillo/rojo: acertaba los 4 con distancia 0
+  y seguía acertando con la luz al 60 % (distancia < 0.05).
 - Se corrigió un fallo: un piso gris se clasificaba como rojo (el gris no tiene
-  tono). Ahora se rechaza con `SAT_MIN = 50` y devuelve cuadrante `0`.
-- Pendiente: contador sin doble conteo y prueba con cartulinas reales.
-- **Decisión abierta**: el cuadrante puede resolverse con **sensor de color al
-  piso** o con **cámara de navegación**. Mientras no se elija el hardware, este
-  módulo queda sin validar en pista y sin integrar a `main.py`; los colores del
-  piso tampoco se pueden calibrar de verdad.
+  tono). Ahora se rechaza y devuelve cuadrante `0`.
+- **Retirado en T8**: la arquitectura v2 (D5/D8) movió el cuadrante al robot con
+  un TCS34725 por I2C. El prototipo de cámara ya no forma parte del flujo.
 
 ### 2026-10-29 — Flujo completo en main.py
 - Se confirmó en el reglamento que **el JSON no tiene que salir del
@@ -799,14 +842,16 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   off-board está permitido. Se envía desde la laptop.
 - `main.py` quedó operativo: stream → detección → cuadrante (desactivado) →
   conteo → JSON impreso. `config.MODO_DETECCION` elige `"color"` o `"yolo"`.
-- `logica/contador.py`: cuenta una víctima tras `CONFIRMA_FRAMES` frames
-  seguidos y la sigue por cercanía, para no sumarla en cada frame.
+- El conteo en la laptop (retirado en T8) contaba una víctima tras varios
+  frames seguidos y la seguía por cercanía, para no sumarla en cada frame.
 - `logica/deteccion_yolo.py`: misma interfaz que el detector de color; usa
   `modelo/pesos/rescate.pt` si existe o `yolo11n.pt` (COCO) si no.
 - Prueba con cámara simulada: una figura naranja durante 8 frames produjo
   `{"0": {"H": 1, "S": 0}}`, es decir, contó una sola vez.
 - Pendiente: `logica/iot.py` (falta el protocolo oficial) y validar en cámara
   real.
+- Este flujo se reemplazó en T1–T9 por la arquitectura v2: la laptop detecta y
+  reenvía; el robot cuenta y decide el derribo.
 
 ### 2026-10-29 — Solo víctimas verticales
 - Se agregó `logica/filtros.py`: una detección solo cuenta si el alto es al
@@ -835,8 +880,8 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
 - Se corrigieron dos fallos: el aviso imprimía “no se pudo conectar (Success)”
   por comparar mal el `ReasonCode` de paho 2.x, y `cerrar()` lanzaba
   `RuntimeError` si el mensaje se había encolado antes de conectar.
-- Broker y tema son **provisionales** (`127.0.0.1`, `coriot/rescate`): hay que
-  confirmarlos con la organización.
+- Broker y tema son **provisionales** (`127.0.0.1`; hoy `config.py` usa
+  `coriot/reporte`): hay que confirmarlos con la organización.
 
 ### 2026-10-29 — Entrenamiento y evaluación de YOLO
 - Se agregó `modelo/entrenar.py`: parte de `modelo/pesos/yolo11n.pt`, entrena
@@ -885,3 +930,18 @@ suscribirse al tema con un visor MQTT (por ejemplo MQTT Explorer).
   y `python -m modelo.entrenar` se detiene con “no hay imágenes en train”.
   Es el comportamiento esperado, no un error.
 - Respaldo de las 43 fotos de prueba: `%TEMP%\opencode\dataset_respaldo_20261029.zip`.
+
+### 2026-11-09 — Arquitectura v2, tests y limpieza (T1–T9)
+
+- La laptop quedó como **detector y reenvío**: cámara → detector → filtro
+  vertical → línea de visión MQTT; reporte del robot → servidor → PUBACK → ACK.
+- Topics en `config.py`: `coriot/vision/E01`, `coriot/robot/E01/reporte`,
+  `coriot/robot/E01/ack`; servidor `coriot/reporte` (TODO).
+- `logica/robot_mqtt.py`: el ACK sale solo tras el PUBACK; sin PUBACK no hay ACK
+  y el robot no derriba.
+- `tools/simular_robot.py`: simulador sin hardware.
+- `tests/`: 47 pruebas con `unittest`, sin red, en ~2,5 s.
+- T8: se retiraron los módulos de cámara de cuadrante, calibración de piso y
+  conteo por frames; esa lógica vive ahora en el robot.
+- T9: README actualizado; quedan como TODO los datos del servidor y las
+  coordenadas de las 24 X.

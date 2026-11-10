@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+import argparse
+
 import cv2
 
 import config
@@ -69,7 +71,15 @@ def dibujar(frame, detecciones):
 
 
 def main():
-    cam = Camara()
+    parser = argparse.ArgumentParser(description="Captura dataset con etiquetas automáticas")
+    parser.add_argument("--fuente", default=None, help="URL o índice de cámara (por defecto config.FUENTE_VIDEO)")
+    args = parser.parse_args()
+
+    if args.fuente is not None:
+        fuente = int(args.fuente) if args.fuente.isdigit() else args.fuente
+        cam = Camara(fuente=fuente)
+    else:
+        cam = Camara()
     base = config.MODELO_DIR / "dataset" / "images"
     conteo = {"train": contar(base / "train"), "val": contar(base / "val")}
     ultimo = ""
