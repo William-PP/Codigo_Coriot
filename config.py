@@ -28,7 +28,7 @@ IOU_MIN = 0.45    # solapamiento máximo entre cajas
 # Se cambia sin tocar el código con la variable de entorno CORIOT_VIDEO:
 #   $env:CORIOT_VIDEO = "0"                      # webcam de la laptop
 #   $env:CORIOT_VIDEO = "http://IP:8080/video"   # celular con IP Webcam
-FUENTE_VIDEO_DEFECTO = "http://192.168.80.145:8080/video"
+FUENTE_VIDEO_DEFECTO = "http://192.168.80.189:8080/video"
 
 
 def _fuente_video():

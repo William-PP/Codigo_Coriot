@@ -1,32 +1,28 @@
 /*
-  Firmware v3.4 · CORIOT GAMES 2026 · Código Rescate · ROBOT REAL (ESP32)
+  Firmware v3.8 - CORIOT GAMES 2026 - Codigo Rescate - ROBOT REAL (ESP32)
 
-  CAMBIOS RESPECTO A v3.3 (según la tabla oficial de la pista):
-  - Borde negro ACTIVO: el límite exterior es negro (tabla del reto).
-    Se exigen 2 lecturas seguidas de NEGRO para confirmar el borde.
-  - 24 posiciones de víctima (X), 6 por cuadrante. Las coordenadas de las X
-    son PROVISIONALES (TODO): medir en la pista.
-  - Un cuadrante se marca como revisado solo cuando sus 6 X están revisadas.
+  CAMBIOS RESPECTO A v3.4:
+  - Secuencia persistente en NVS (Preferences). Incrementa en cada reporte y no se reinicia al encender.
+  - Configuracion por MQTT: suscripcion a coriot/robot/E01/config (retenido) con {equipo,intento}.
+  - Control por un solo interruptor de encendido: encender = arranque, apagar = parada. Sin boton.
+  - Tiempo: 470 s envia reporte final y detiene motores; 480 s detiene todo.
+  - Borde negro ACTIVO: el limite exterior es negro; 2 lecturas seguidas.
+  - Servo: verificar que en reposo y en derribo quepa en 13x18x20 cm (TODO medir).
+  - Vision: la laptop (celular con IP Webcam) detecta; el robot recibe las detecciones por MQTT en coriot/vision/E01.
+  - Reporte: el robot arma el JSON y lo publica en coriot/robot/E01/reporte. La laptop lo reenvia al servidor y responde ACK. Sin ACK no hay derribo.
+  - Derribo: lo decide el robot con sus sensores.
+  - Color: sensor TCS34725 por I2C.
+  - Distancia: 3 HC-SR04.
+  - Motores: DRV8871 x2 directo de bateria.
+  - Watchdog de 8 s.
+  - Vision: se exige h >= 1.2 * w; las derribadas no cuentan.
+  - 24 posiciones de victima (X), barrido de cobertura, 4 puntos por cuadrante. Coordenadas PROVISIONALES (TODO).
 
-  CAMBIOS RESPECTO A v3.2 (decisiones según la lista de materiales):
-  - Visión: la laptop (celular con IP Webcam) detecta; el robot recibe las
-    detecciones por MQTT en coriot/vision/E01 (ya no por UART2).
-  - Reporte: el robot arma el JSON y lo publica en un tema privado del broker
-    (coriot/robot/E01/reporte). La laptop lo reenvía al servidor de la
-    competencia y responde ACK en coriot/robot/E01/ack. Sin ACK no hay derribo.
-  - Derribo: lo decide el robot con sus sensores. La laptop no manda órdenes.
-  - Color: sensor TCS34725 por I2C (antes TCS3200 por frecuencia).
-  - Distancia: 3 HC-SR04 (frente, izquierda, derecha).
-  - Motores: DRV8871 x2 alimentados directo de la batería (sin buck de 6 V).
-    Corte de misión si la batería baja de BAT_CORTE_V.
-  - Borde negro: desactivado (el reglamento no tiene líneas negras).
-  - Watchdog de 8 s: si el lazo se cuelga, el ESP32 reinicia y los motores
-    quedan sin señal.
-  - Visión: se exige h >= 1.2 * w (figura de pie); las derribadas no cuentan.
-
-  PENDIENTE (no cubierto aquí): formato definitivo del JSON y broker/tema
-  oficiales con la organización; calibración de COLOR_CAL y CLEAR_MIN.
+  PENDIENTE: formato definitivo del JSON y broker/tema oficiales; calibracion de COLOR_CAL y CLEAR_MIN;
+  barrido por 4 puntos relativos por cuadrante + 360 (TODO); dedup por rumbo +/-15 deg (TODO);
+  recepcion de coordenadas de X por MQTT (TODO); dimensiones del servo (TODO).
 */
+
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -34,6 +30,7 @@
 #include <PubSubClient.h>
 #include <math.h>
 #include <esp_task_wdt.h>
+#include <Preferences.h>
 
 // =====================================================================
 //  CONFIGURACIÓN
@@ -53,7 +50,12 @@ const char* EQUIPO_ID      = "E01";
 const char* MQTT_TOPIC_VISION = "coriot/vision/E01";        // laptop -> robot
 const char* MQTT_TOPIC      = "coriot/robot/E01/reporte";  // robot -> laptop
 const char* MQTT_TOPIC_ACK  = "coriot/robot/E01/ack";      // laptop -> robot
-char INTENTO_ID[8]        = "I1";                // lo asigna el juez (comando 'i')
+const char* MQTT_TOPIC_CFG   = "coriot/robot/E01/config";    // laptop -> robot (retained)
+char INTENTO_ID[8]        = "I1";                // lo asigna el juez (por MQTT config)
+char EQUIPO_ID_RAM[16]     = "E01";               // se sobrescribe por config MQTT
+bool configValida          = false;               // true cuando llego {"equipo","intento"}
+unsigned long tEsperaConfig = 0;       // millis() al entrar en espera
+bool configTimeout         = false;               // true si pasaron 3 s sin config (no arranca despues)
 const bool  USAR_ACK_SERVIDOR = true;            // el derribo espera ACK de la laptop
 const unsigned long ACK_MS = 8000;
 
@@ -105,7 +107,8 @@ const float GIRO_TOL_DEG = 2.0f;
 const unsigned long US_TIMEOUT_US = 9000UL;   // HC-SR04: ~150 cm de alcance útil
 
 // ---- Misión ----
-const unsigned long LIMITE_MS = 470000UL;   // 8 min con 10 s de margen (usa 60000 para probar). VERIFICAR con el reglamento
+const unsigned long LIMITE_MS = 470000UL;   // 7 min 50 s: envia reporte final y detiene motores
+const unsigned long LIMITE_TOTAL_MS = 480000UL; // 8 min: detiene todo (reglamento)
 const int   OBST_CM = 15;
 const int   PARADA_CM = 6;                  // distancia de golpe (según alcance del servo)
 const unsigned long PERDIDA_MS = 1000;
@@ -113,13 +116,11 @@ const float MAX_ACERCAR_MM = 700.0f;
 const byte  SCAN_PASOS = 12;                // 12 vistas de 30 grados
 const unsigned long SCAN_PAUSA_MS = 900;
 const unsigned long IGNORAR_MS = 2500;
-const byte  MAX_ENVIOS = 2;
+const byte  MAX_ENVIOS = 3;
 const byte  MAX_GOLPES = 3;
-const byte  PUNTOS_POR_Q = 6;               // X por cuadrante (tabla oficial: 24 X, 6 por cuadrante)
+const byte  PUNTOS_POR_Q = 4;               // puntos de barrido por cuadrante (4: 25%/75% de cada eje)
 const unsigned long WP_TIMEOUT_MS = 25000;
 const float WP_TOL_MM = 80.0f;
-const float DEDUP_MM = 150.0f;              // figuras más cerca que esto = la misma
-const int   DEDUP_MAX_CM = 150;
 const float SNAP_TOL_MM = 250.0f;
 const int   SERVO_REPOSO = 0, SERVO_GOLPE = 90;
 const bool  CIERRE_ANTICIPADO = false;      // zona gris del reglamento
@@ -136,7 +137,7 @@ const int   CONF_MIN = 50;
 const int   ASPECTO_MIN_X10 = 12;           // h >= 1.2 * w: figura de pie (x10 para evitar decimales)
 const unsigned long VISION_VIVA_MS = 1000;
 const int   ZONA_CENTRO = 90;               // tolerancia de centrado (sobre 1000)
-const int   W_MIN_GOLPE = 0;                // ancho mínimo a PARADA_CM. MEDIR; 0 = desactivado
+const int   W_MIN_GOLPE = 0;                // ancho mínimo a PARADA_CM. MEDIR; 0 = inactivo
 
 // ---- Color (TCS34725 por I2C) ----
 // Los valores brutos (clear, r, g, b) dependen de la luz. Calibrar con 'k'.
@@ -229,14 +230,16 @@ byte  visitado = 0, revisado = 0;
 byte  heridos[4] = {0, 0, 0, 0}, suministros[4] = {0, 0, 0, 0};   // SOLO confirmadas (con derribo)
 bool  pendiente = false; byte pendCuad = VERDE; char pendClase = 'H';
 float figX = 0, figY = 0;
-float figsX[16], figsY[16]; byte nFigs = 0;
+float figsX[24], figsY[24]; byte nFigs = 0;
 float WP_X[24], WP_Y[24]; unsigned int wpHecho = 0, wpMascaraInicial = 0;
 byte  negroCont = 0;             // lecturas seguidas de NEGRO (borde)
 int   wpActual = -1, wpEnScan = -1;
 byte  scanPaso = 0; bool scanEnCurso = false;
+float yawsRegistrados[16]; byte nYaws = 0;
 float acercarD0 = 0; bool dedupOk = false;
 byte  faseDerribo = 0, golpes = 0, faseRep = 0, intentosEnvio = 0;
 unsigned long secuencia = 0;
+Preferences prefs;
 bool  reporteSolicitado = false, finalPend = false;
 byte  intentosFinal = 0, derribos = 0, erroresEnvio = 0;
 bool  ackRecibido = false; unsigned long ackSeqEsperada = 0;
@@ -627,6 +630,25 @@ void onMqtt(char* topic, byte* payload, unsigned int len) {
   char b[200];
   if (len > 199) len = 199;
   memcpy(b, payload, len); b[len] = 0;
+  if (strcmp(topic, MQTT_TOPIC_CFG) == 0) {
+    char* pe = strstr(b, "\"equipo\"");
+    char* pi = strstr(b, "\"intento\"");
+    if (!pe || !pi) { Serial.println(F("MQTT config invalida: falta equipo/intento")); return; }
+    char eq[16] = {0}, in[8] = {0};
+    char* qe = strchr(pe, ':'); if (qe) { qe++; while (*qe == ' ' || *qe == '"') qe++; int i=0; while (*qe && *qe != '"' && *qe != ',' && i < 15) eq[i++] = *qe++; }
+    char* qi = strchr(pi, ':'); if (qi) { qi++; while (*qi == ' ' || *qi == '"') qi++; int i=0; while (*qi && *qi != '"' && *qi != ',' && i < 7) in[i++] = *qi++; }
+    if (configTimeout) { Serial.println(F("Config llego tarde (>3 s): ignorada. Apaga y enciende para arrancar.")); return; }
+    if (eq[0] && in[0]) {
+      strncpy(EQUIPO_ID_RAM, eq, sizeof(EQUIPO_ID_RAM)-1);
+      strncpy(INTENTO_ID, in, sizeof(INTENTO_ID)-1);
+      configValida = true;
+      Serial.print(F("Config OK equipo=")); Serial.print(EQUIPO_ID_RAM);
+      Serial.print(F(" intento=")); Serial.println(INTENTO_ID);
+    } else {
+      Serial.println(F("MQTT config invalida: equipo/intento vacios"));
+    }
+    return;
+  }
   if (strcmp(topic, MQTT_TOPIC_VISION) == 0) { procesarLineaVision(b); return; }
   // ACK de la laptop: busca "secuencia":N
   char* p = strstr(b, "\"secuencia\"");
@@ -647,12 +669,13 @@ void mqttServicio() {
   if (ok) {
     if (USAR_ACK_SERVIDOR) mqtt.subscribe(MQTT_TOPIC_ACK);
     mqtt.subscribe(MQTT_TOPIC_VISION);
+    mqtt.subscribe(MQTT_TOPIC_CFG);
   }
 }
 
 int armarJson(char* b, size_t n, const char* est, bool conPend) {
   int k = snprintf(b, n, "{\"equipo\":\"%s\",\"intento\":\"%s\",\"secuencia\":%lu,\"estado\":\"%s\",\"cuadrantes\":[",
-                   EQUIPO_ID, INTENTO_ID, secuencia, est);
+                   EQUIPO_ID_RAM, INTENTO_ID, secuencia, est);
   for (byte c = 0; c < 4 && k < (int)n - 130; c++) {
     int h = heridos[c], s = suministros[c];
     if (conPend && pendiente && pendCuad == c) { if (pendClase == 'H') h++; else s++; }
@@ -683,6 +706,7 @@ void servicioReportes() {
   if (!vencido(tProxEnvio)) return;
   if (!robotQuieto()) return;
   secuencia++;
+  prefs.putULong("seq", secuencia);
   if (publicarReporte("en_curso", false)) reporteSolicitado = false;
 }
 
@@ -694,6 +718,7 @@ void volverABuscar() { irA(scanEnCurso ? E_SCAN : E_NAVEGAR); }
 void iniciarScan() {
   parar();
   scanPaso = 0;
+  nYaws = 0;
   scanEnCurso = true;
   Serial.println(F("Escaneo 360 con la camara"));
   irA(E_SCAN);
@@ -748,7 +773,7 @@ void elegirWaypoint() {
   bool faltaCuad = (revisado & 0x0F) != 0x0F;
   for (byte pasada = 0; pasada < 2 && wpActual < 0; pasada++) {
     float mejor = 1e9f;
-    for (byte i = 0; i < 24; i++) {
+    for (byte i = 0; i < (PUNTOS_POR_Q * 4); i++) {
       if ((wpHecho >> i) & 1) continue;
       if (pasada == 0 && faltaCuad && ((revisado >> (i / PUNTOS_POR_Q)) & 1)) continue;
       float d = hypotf(WP_X[i] - xMm, WP_Y[i] - yMm);
@@ -826,7 +851,7 @@ void pasoScan() {
     if (wpEnScan >= 0) { wpHecho |= (1U << wpEnScan); wpEnScan = -1; }
     wpActual = -1;
     byte q = cuadranteGeom(xMm, yMm);
-    if (cuadranteCompleto(q)) {                    // solo cuando sus 6 X están revisadas
+    if (cuadranteCompleto(q)) {                    // cuando completa sus 4 puntos de barridoán revisadas
       revisado |= (1 << q);
       Serial.print(F("Cuadrante revisado: ")); Serial.println(NOMBRE[q]);
     }
@@ -839,9 +864,11 @@ void pasoScan() {
   scanPaso++;
 }
 
-bool esDuplicada(float fx, float fy) {
-  for (byte i = 0; i < nFigs; i++)
-    if (hypotf(fx - figsX[i], fy - figsY[i]) < DEDUP_MM) return true;
+bool rumboYaRegistrado(float yaw) {
+  for (byte i = 0; i < nYaws; i++) {
+    float diff = fabsf(difAng(yaw, yawsRegistrados[i]));
+    if (diff <= 15.0f) return true;
+  }
   return false;
 }
 
@@ -871,6 +898,7 @@ void pasoAcercar() {
       pendCuad = cuadranteGeom(figX, figY);
       pendClase = (scoreH >= scoreS) ? 'H' : 'S';
       intentosEnvio = 0; faseRep = 0;
+      if (nYaws < 16) { yawsRegistrados[nYaws++] = thDeg; }
       Serial.print(F("A ")); Serial.print(d); Serial.print(F(" cm: clase ")); Serial.print(pendClase);
       Serial.print(F(", cuadrante ")); Serial.println(NOMBRE[pendCuad]);
       irA(E_REPORTAR);
@@ -888,11 +916,9 @@ void pasoAcercar() {
     if (ex > 0) mover(s, -s); else mover(-s, s);
     return;
   }
-  if (!dedupOk && d <= DEDUP_MAX_CM) {
-    float th = thDeg * DEG2RAD;
-    float r = US_OFFSET_MM + d * 10.0f;
-    if (esDuplicada(xMm + r * cosf(th), yMm + r * sinf(th))) {
-      parar(); Serial.println(F("Figura ya contada: la ignoro"));
+  if (!dedupOk) {
+    if (rumboYaRegistrado(thDeg)) {
+      parar(); Serial.println(F("Figura ya contada en este barrido: la ignoro"));
       tIgnorarHasta = millis() + IGNORAR_MS * 2;
       encolarAcc(A_GIRO, 60.0f);
       volverABuscar(); return;
@@ -925,7 +951,7 @@ void pasoReportar() {
   if (faseRep == 0) {
     if (!vencido(tProxEnvio)) return;
     intentosEnvio++;
-    if (intentosEnvio == 1) { secuencia++; pendiente = true; }
+    if (intentosEnvio == 1) { secuencia++; prefs.putULong("seq", secuencia); pendiente = true; }
     bool pub = publicarReporte("en_curso", true);  // incluye la víctima pendiente
     if (!pub) { falloEnvio(); return; }
     if (!USAR_ACK_SERVIDOR) { aceptarReporte(); return; }
@@ -962,7 +988,7 @@ void pasoDerribar() {
         } else {
           if (pendClase == 'H') heridos[pendCuad]++; else suministros[pendCuad]++;
           pendiente = false; derribos++;
-          if (nFigs < 16) { figsX[nFigs] = figX; figsY[nFigs] = figY; nFigs++; }
+          if (nFigs < 24) { figsX[nFigs] = figX; figsY[nFigs] = figY; nFigs++; }
           Serial.print(F("Derribo #")); Serial.println(derribos);
           tIgnorarHasta = millis() + IGNORAR_MS;
           solicitarReporte();
@@ -989,6 +1015,7 @@ void terminar() {
   pendiente = false;
   irA(E_FIN);
   secuencia++;
+  prefs.putULong("seq", secuencia);
   finalPend = true; intentosFinal = 0;
   Serial.print(F("FIN. Derribos: ")); Serial.print(derribos);
   Serial.print(F(" | errores de envio: ")); Serial.println(erroresEnvio);
@@ -1101,9 +1128,17 @@ void esperaLoop() {
     else if (c == 'i') cambiarIntento();
     else if (c == 'b') { Serial.print(F("Bateria: ")); Serial.print(leerBateriaV(), 2); Serial.println(F(" V")); }
   }
-  if (digitalRead(PIN_START) != LOW) return;
-  delay(30);
-  if (digitalRead(PIN_START) != LOW) return;
+  // v3.8: sin boton. Arranque solo si la config llega en los 3 s posteriores al encendido.
+  if (!configValida) {
+    if (!configTimeout && (millis() - tEsperaConfig) >= 3000UL) {
+      configTimeout = true;
+      Serial.println(F("Sin config en 3 s: modo espera permanente. Apaga y enciende para reintentar."));
+    }
+    static unsigned long tBlink = 0;
+    static bool ledOn = false;
+    if (millis() - tBlink > 500) { tBlink = millis(); ledOn = !ledOn; digitalWrite(2, ledOn ? HIGH : LOW); }
+    return;
+  }
 
   tInicio = millis(); tTick = tInicio; tCtl = tInicio;
   xMm = START_X_MM; yMm = START_Y_MM; thDeg = START_TH_DEG; yawDeg = 0; odoDist = 0;
@@ -1122,11 +1157,11 @@ void esperaLoop() {
 // =====================================================================
 void setup() {
   Serial.begin(115200);
-  pinMode(PIN_START, INPUT_PULLUP);
   analogSetPinAttenuation(PIN_BAT, ADC_11db);
   pinMode(PIN_ENC_L_A, INPUT); pinMode(PIN_ENC_L_B, INPUT);
   pinMode(PIN_ENC_R_A, INPUT); pinMode(PIN_ENC_R_B, INPUT);
   pinMode(PIN_TRIG_F, OUTPUT); pinMode(PIN_ECHO_F, INPUT);
+  pinMode(2, OUTPUT);  // LED de espera (v3.6)
   pinMode(PIN_TRIG_L, OUTPUT); pinMode(PIN_ECHO_L, INPUT);
   pinMode(PIN_TRIG_R, OUTPUT); pinMode(PIN_ECHO_R, INPUT);
 
@@ -1151,15 +1186,20 @@ void setup() {
 
   // 6 posiciones X por cuadrante. PROVISIONALES (TODO): medir en la pista.
   // Offsets (mm) respecto al centro del cuadrante, en 3 columnas x 2 filas.
-  const int OX[6] = {-300, 0, 300, -300, 0, 300};
-  const int OY[6] = {-300, -300, -300, 300, 300, 300};
-  for (byte i = 0; i < 24; i++) {
+  const int OX[4] = {-250, -250, 250, 250};
+  const int OY[4] = {-250, 250, -250, 250};
+  for (byte i = 0; i < (PUNTOS_POR_Q * 4); i++) {
     byte q = i / PUNTOS_POR_Q, k = i % PUNTOS_POR_Q;
     WP_X[i] = CX[q] + OX[k];
     WP_Y[i] = CY[q] + OY[k];
   }
   wpMascaraInicial = 0;                             // las 24 X están pendientes
   wpHecho = wpMascaraInicial;
+
+  // NVS: secuencia persistente
+  prefs.begin("coriot", false);
+  secuencia = prefs.getULong("seq", 0);
+  Serial.print(F("Secuencia NVS: ")); Serial.println(secuencia);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -1185,7 +1225,8 @@ void setup() {
 
   if (!COLOR_CALIBRADO) Serial.println(F("AVISO: color SIN CALIBRAR (comando 'k' y edita COLOR_CAL / CLEAR_MIN)"));
   Serial.print(F("Bateria: ")); Serial.print(leerBateriaV(), 2); Serial.println(F(" V"));
-  Serial.println(F("Quieto en START (calibrando giroscopio) y pulsa START (GPIO0)."));
+  tEsperaConfig = millis();
+  Serial.println(F("Quieto en START (calibrando giroscopio). Esperando config por MQTT (3 s)..."));
 }
 
 void loop() {
@@ -1196,6 +1237,7 @@ void loop() {
   if (estado == E_ESPERA) { esperaLoop(); return; }
 
   if (estado != E_FIN && millis() - tInicio >= LIMITE_MS) terminar();
+  if (estado != E_FIN && millis() - tInicio >= LIMITE_TOTAL_MS) { Serial.println(F("TIEMPO TOTAL 480s: parada")); parar(); irA(E_FIN); }
   if (estado == E_FIN) { servicioFin(); return; }
 
   controlMotores();

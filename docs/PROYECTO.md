@@ -324,24 +324,24 @@ python -m unittest discover -s tests -v
 | C2 | El README antiguo leía el cuadrante por cámara mirando el color del piso. | D5: lo lee el TCS34725 del robot. | Resuelta en T9. |
 | C3 | El README antiguo decía que la laptop construía el JSON. | D2: lo arma el robot y la laptop lo reenvía tal cual. | Resuelta en T9. |
 | C4 | Una nota antigua del firmware decía “borde negro: desactivado”. | El firmware v3.7 tiene `BORDE_NEGRO = true` y 2 lecturas seguidas. | Resuelta en v3.7. |
-| C5 | El encabezado del firmware v3.7 dice “24 posiciones de víctima” y el comentario de `main` dice “6 X por cuadrante”. | `PUNTOS_POR_Q = 4` crea 4 waypoints por cuadrante (16 en total) y `cuadranteCompleto()` revisa 4 por cuadrante. Las 6 X no se visitan una por una. | **Abierta.** Decidir si se aceptan 4 puntos de barrido por cuadrante o se cambia el firmware. Dueño: Wilk. |
-| C6 | El firmware usa `DEDUP_MM = 150`: figuras a menos de 15 cm se consideran la misma. | En 1 m × 1 m con 6 X por cuadrante puede haber separaciones menores a 15 cm. | **Abierta.** Medir en la pista antes de confiar en el deduplicado. |
+| C5 | El encabezado del firmware v3.7 dice "24 posiciones de victima" y el comentario de main dice "6 X por cuadrante". | `PUNTOS_POR_Q = 4` crea 4 waypoints por cuadrante (16 en total) y `cuadranteCompleto()` revisa 4 por cuadrante. Las 6 X no se visitan una por una. | **Resuelta (v3.7):** cobertura de 4 puntos por cuadrante. |
+| C6 | El firmware usa `DEDUP_MM = 150`: figuras a menos de 15 cm se consideran la misma. | En 1 m x 1 m con 6 X por cuadrante puede haber separaciones menores a 15 cm. | **Abierta.** Medir en la pista antes de confiar en el deduplicado. Dueño: Wilk. |
 | C7 | Los documentos anteriores suponían que el firmware no estaba en el repositorio. | `firmware/firmware_robot_v3_7_esp32/` existe localmente (sin seguimiento en Git). | Resuelta como hecho; no se modifica el firmware desde OpenCode. |
 | C8 | Un documento decía que la v2 reemplazaba a la actualización. | La actualización decía que ella prevalecía. | Resuelta: prevalece la actualización de 2026-11-09. |
 | C9 | La actualización decía que el firmware vigente era v3.3. | El archivo local es v3.7, con borde activo y 24 posiciones en el encabezado. | Resuelta: se usa v3.7. |
 | C10 | El firmware v3.4 reiniciaba la secuencia en RAM. | La deduplicación por número podía silenciar reportes nuevos. | Resuelta con huella de contenido (D15); el v3.7 además persiste la secuencia en NVS. |
 | C11 | La documentación decía “reenviar máximo 2 veces”. | El firmware v3.4 tenía `MAX_ENVIOS = 2` y el v3.7 tiene `MAX_ENVIOS = 3`; con el envío inicial da 3 transmisiones. | Resuelta en v3.7: inicial + 2 reenvíos. |
 | C12 | El README antiguo decía 47 pruebas. | La suite actual tiene 76 pruebas: 18 nuevas de la GUI. | Resuelta en este documento (ver §8.4). |
-| C13 | La documentación anterior decía que se competía con el detector de color si no había `rescate.pt` o si el mAP era ≤ 0.70. | `config.py` pone `MODO_DETECCION = "yolo"` por defecto y `main.py` exige `rescate.pt` para arrancar en modo `yolo`. | **Abierta.** Decisión vigente: competir con YOLO (D18). Falta que el modelo exista; dueño: Wilk. |
-| C14 | La documentación de entrenamiento recomienda `--tiempo 40` (40 min de tope). | La GUI propone 20 minutos por defecto. | **Abierta.** Decidir el tope real del día. Dueños: Wilk y OpenCode. |
-| C15 | El encabezado interno del firmware dice “v3.6”. | La carpeta y el archivo se llaman `firmware_robot_v3_7_esp32`. | **Abierta (cosmética).** La versión que se cita es v3.7; dueño: Wilk. |
-| C16 | La documentación anterior decía que el robot arranca con un botón físico y que la GUI “Preparar” no arranca el robot. | El firmware v3.6/v3.7 no usa botón: al encender espera una configuración válida por MQTT y arranca. La GUI publica esa configuración retenida en “Preparar”. | **Abierta y crítica.** Definir la secuencia oficial de arranque con el juez. Dueños: Wilk y OpenCode. |
-| C17 | `_servidor_configurado()` considera que `127.0.0.1` no es un servidor configurado. | El broker local de pruebas usa `127.0.0.1`; si el broker oficial también fuera local, la GUI mostraría una advertencia falsa. | **Abierta.** Confirmar el host oficial; dueño: organización. |
-| C18 | `config.FUENTE_VIDEO_DEFECTO` es una IP fija (`http://192.168.80.145:8080/video`). | La GUI propone `"0"` (webcam de la laptop) por defecto. | **Abierta (diferencia de valores por defecto).** No es un error si se elige la fuente en la GUI; dueño: OpenCode. |
-| C19 | `.gitignore` ignora pesos, dataset y `modelo/runs/`. | No ignora `logs/` ni `datos/`, que contienen inferencias y capturas. | **Abierta.** Agregarlos antes de un commit; dueño: OpenCode. |
-| C20 | `requirements-lock.txt` está guardado en UTF-16LE (BOM `FF FE`). | `pip install -r` espera UTF-8. | **Abierta.** Puede fallar la instalación; dueño: OpenCode. |
-| C21 | `modelo/verificar_entorno.py` incluye un mensaje que apunta a una guía de pesos externa. | Si esa guía se retira, la referencia queda rota. | **Abierta.** Actualizar el mensaje o conservar la guía; dueño: OpenCode (no se tocó el código en esta tarea). |
-| C22 | La documentación anterior hablaba de 470 s como límite provisional. | El reglamento fija 480 s; el firmware envía el reporte final a los 470 s y detiene todo a los 480 s. | Resuelta: 480 s totales, con cierre anticipado de reporte a los 470 s. |
+| C13 | La documentacion anterior decia que se competia con el detector de color si no habia `rescate.pt` o si el mAP era <= 0.70. | `config.py` pone `MODO_DETECCION = "yolo"` por defecto y `main.py` exige `rescate.pt` para arrancar en modo `yolo`. | **Cerrada:** competir con YOLO (D18). Falta que el modelo exista; dueño: Wilk. |
+| C14 | La documentacion de entrenamiento recomienda `--tiempo 40` (40 min de tope). | La GUI propone 20 minutos por defecto. | **Resuelta:** tope de 40 min. |
+| C15 | El encabezado interno del firmware dice v3.6. | La carpeta y el archivo se llaman `firmware_robot_v3_7_esp32`. | **Cerrada (v3.8):** encabezado actualizado a v3.8. |
+| C16 | La documentacion anterior decia que el robot arranca con un boton fisico y que la GUI "Preparar" no arranca el robot. | El firmware v3.6/v3.7 no usa boton: al encender espera una configuracion valida por MQTT y arranca. La GUI publica esa configuracion retenida en "Preparar". | **Resuelta (v3.8):** arranque solo con configuracion en los 3 s posteriores al encendido; si no llega, espera permanente. |
+| C17 | `_servidor_configurado()` considera que `127.0.0.1` no es un servidor configurado. | El broker local de pruebas usa `127.0.0.1`; si el broker oficial tambien fuera local, la GUI mostraria una advertencia falsa. | **Cerrada:** `_servidor_configurado()` ahora revisa solo `SERVIDOR_TEMA`. |
+| C18 | `config.FUENTE_VIDEO_DEFECTO` es una IP fija. | La GUI propone "0" (webcam de la laptop) por defecto. | **Abierta (diferencia de valores por defecto).** No es un error si se elige la fuente en la GUI; dueño: OpenCode. |
+| C19 | `.gitignore` ignora pesos, dataset y `modelo/runs/`. | No ignora `logs/` ni `datos/`, que contienen inferencias y capturas. | **Cerrada:** `datos/` y `logs/` agregados a `.gitignore`. |
+| C20 | `requirements-lock.txt` esta guardado en UTF-16LE (BOM `FF FE`). | `pip install -r` espera UTF-8. | **Cerrada:** regenerado en UTF-8 sin BOM. |
+| C21 | `modelo/verificar_entorno.py` incluye un mensaje que apunta a una guia de pesos externa. | Si esa guia se retira, la referencia queda rota. | **Cerrada:** mensaje actualizado a "Revisa docs/PROYECTO.md, seccion 8.2." |
+| C22 | La documentacion anterior hablaba de 470 s como limite provisional. | El reglamento fija 480 s; el firmware envia el reporte final a los 470 s y detiene todo a los 480 s. | Resuelta: 480 s totales, con cierre anticipado de reporte a los 470 s. |
 
 ---
 
@@ -349,12 +349,12 @@ python -m unittest discover -s tests -v
 
 ### 6.1 Versión y compilación
 
-- **Versión vigente:** v3.7, en `firmware/firmware_robot_v3_7_esp32/firmware_robot_v3_7_esp32.ino`.
-- El encabezado interno todavía dice v3.6 (C15); la carpeta y el archivo son la referencia.
+- **Versión vigente:** v3.8, en `firmware/firmware_robot_v3_8_esp32/firmware_robot_v3_8_esp32.ino`.
+- Compila con arduino-cli (salida: 982483 bytes, 74 % de programa; 50084 bytes, 15 % de RAM dinámica).
 - No se modifica el firmware desde OpenCode.
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32 firmware\firmware_robot_v3_7_esp32
+arduino-cli compile --fqbn esp32:esp32:esp32 firmware\firmware_robot_v3_8_esp32
 ```
 
 ### 6.2 Dependencias
@@ -395,7 +395,7 @@ arduino-cli lib install PubSubClient
 - `LIMITE_MS = 470000` (7 min 50 s): envía reporte final y detiene motores.
 - `LIMITE_TOTAL_MS = 480000` (8 min): detiene todo.
 - `BORDE_NEGRO = true` con `BORDE_LECTURAS = 2`.
-- `PUNTOS_POR_Q = 4`: 4 waypoints por cuadrante (16 en total). El encabezado habla de 24 X y el comentario de 6 por cuadrante; ver C5.
+- `PUNTOS_POR_Q = 4`: 4 waypoints por cuadrante (16 en total). El encabezado habla de 24 X y el comentario de 6 por cuadrante; ver C5. El barrido de cobertura usa 4 puntos relativos (25 % y 75 % de cada eje) con un giro de 360° en cada punto.
 - `figsX[24]` y `figsY[24]`: capacidad para 24 figuras detectadas.
 - `CIERRE_ANTICIPADO = false`.
 - Visión: exige `h ≥ 1.2 × w`; `CONF_MIN = 50`; confirma una figura con 5 de los últimos 7 frames.
@@ -566,7 +566,7 @@ La suite actual tiene **76 pruebas** y corre sin red ni broker. Si falla, no se 
 | Confirmar los nombres de los cuadrantes en el servidor | Organización | Deben coincidir con `rojo`, `azul`, `verde`, `amarillo` |
 | Confirmar por escrito que la laptop puede enviar detecciones al robot por red privada | Organización | El reglamento permite el intercambio automático; conviene dejarlo por escrito |
 | Medir las coordenadas exactas de las 24 X | Wilk | Se miden en la pista; no inventarlas |
-| Compilar y probar el firmware v3.7 en el robot | Wilk | Requiere `arduino-cli`; no se compiló en esta sesión |
+| Compilar y probar el firmware v3.8 en el robot | Wilk | Compilado en esta sesion (982483 bytes, 74 %) |
 | Resolver la diferencia entre 4 waypoints por cuadrante y 24 X | Wilk | C5; decisión de firmware, no de OpenCode |
 | Calibrar TCS34725, `COLOR_CAL`, `CLEAR_MIN` y `BAT_FACTOR` | Wilk | En la pista y con multímetro |
 | Confirmar `TICKS_REV`, dimensiones del servo y medidas 13 × 18 × 20 cm | Wilk | Incluye partes desplegadas |
@@ -575,11 +575,11 @@ La suite actual tiene **76 pruebas** y corre sin red ni broker. Si falla, no se 
 | Decidir la secuencia oficial de arranque (configuración retenida vs. señal del juez) | Wilk y OpenCode | C16; crítica para no arrancar antes de tiempo |
 | Decidir el tope de entrenamiento: 20 min de la GUI vs. 40 min recomendados | Wilk y OpenCode | C14 |
 | Hacer la prueba de extremo a extremo con Mosquitto real y cámara real | OpenCode y Wilk | Falta broker y hardware conectados |
-| Agregar `logs/` y `datos/` a `.gitignore` | OpenCode | C19; no se hizo en esta tarea |
+| Agregar `logs/` y `datos/` a `.gitignore` | OpenCode | Resuelto: C19 |
 | Corregir la codificación de `requirements-lock.txt` | OpenCode | C20; UTF-16LE puede romper `pip install -r` |
-| Actualizar el mensaje de `modelo/verificar_entorno.py` que apunta a la guía de pesos, si esa guía se retira | OpenCode | C21; no se tocó el código en esta tarea |
+| Actualizar el mensaje de `modelo/verificar_entorno.py` | OpenCode | Resuelto: C21 |
 | Probar la GUI con cámara y broker reales | OpenCode y Wilk | La prueba actual usa cámara simulada y sin broker |
-| Revisar el aviso de servidor cuando el broker sea `127.0.0.1` | OpenCode | C17 |
+| Revisar el aviso de servidor cuando el broker sea `127.0.0.1` | OpenCode | Resuelto: C17 |
 
 ---
 

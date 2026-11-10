@@ -155,11 +155,12 @@ def publicar_config(equipo, intento, host=None, port=None, usuario=None, passwor
 
 
 def _servidor_configurado():
-    """Indica si config.py tiene los datos del servidor oficial."""
-    host = (config.BROKER_HOST or "").strip()
+    """Indica si el endpoint del servidor de la organización está configurado.
+
+    Solo se revisa la constante del servidor (SERVIDOR_TEMA). El broker local
+    127.0.0.1 NO cuenta como 'no configurado': es el broker de pruebas.
+    """
     tema = (config.SERVIDOR_TEMA or "").strip()
-    if not host or host == "127.0.0.1":
-        return False
     if not tema:
         return False
     return True

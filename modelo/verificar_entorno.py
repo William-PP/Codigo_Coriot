@@ -16,7 +16,7 @@ print(f"opencv:      {cv2.__version__}")
 # 2. Pesos base obligatorios (no se descargan)
 pesos = config.PESOS_DIR / "yolo11n.pt"
 if not pesos.exists():
-    raise SystemExit(f"Falta el modelo base: {pesos}. Copialo desde el kit (kit/PESOS_MODELO.txt).")
+    raise SystemExit(f"Falta el modelo base: {pesos}. Revisa docs/PROYECTO.md, sección 8.2.")
 
 # 3. Cargar YOLO11n
 modelo = YOLO(str(pesos))
